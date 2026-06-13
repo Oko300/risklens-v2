@@ -18,6 +18,7 @@ from typing import Literal, Optional
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from core.cache      import cache_get, cache_set, make_cache_key
 from core.fetcher   import fetch_one_filing
 from core.extractor import extract_sections_cached
 from schemas        import (
@@ -198,6 +199,12 @@ def register_risk_categorizer(mcp: FastMCP) -> None:
         if form_type not in ("10-Q", "10-K"):
             raise ToolError("form_type must be '10-Q' or '10-K'.")
 
+        _ck = make_cache_key("categorize_risks", ticker, form_type)
+        _hit = cache_get(_ck)
+        if _hit:
+            from pydantic import TypeAdapter
+            return TypeAdapter(CategorizeRisksOutput).validate_python(_hit)
+
         try:
             result = await asyncio.wait_for(
                 _run_categorizer_pipeline(ticker, form_type),
@@ -228,6 +235,8 @@ def register_risk_categorizer(mcp: FastMCP) -> None:
                 elapsed_seconds=round(elapsed, 2),
             )
 
+        if result.pipeline_success:
+            cache_set(_ck, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="categorize_risks")
         return result
 
 

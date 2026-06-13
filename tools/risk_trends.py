@@ -16,6 +16,7 @@ from typing import Literal, Optional
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from core.cache      import cache_get, cache_set, make_cache_key
 from core.fetcher   import fetch_n_filings
 from core.extractor import extract_sections_cached
 from core.scorer    import score_sections
@@ -90,6 +91,12 @@ def register_risk_trends(mcp: FastMCP) -> None:
 
         n_filings = max(2, min(n_filings, MAX_FILINGS))
 
+        _ck = make_cache_key("analyze_risk_trends", ticker, form_type, str(n_filings))
+        _hit = cache_get(_ck)
+        if _hit:
+            from pydantic import TypeAdapter
+            return TypeAdapter(RiskTrendsOutput).validate_python(_hit)
+
         try:
             result = await asyncio.wait_for(
                 _run_trends_pipeline(ticker, form_type, n_filings),
@@ -118,6 +125,8 @@ def register_risk_trends(mcp: FastMCP) -> None:
                 elapsed_seconds=round(elapsed, 2),
             )
 
+        if result.pipeline_success:
+            cache_set(_ck, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="analyze_risk_trends")
         return result
 
 

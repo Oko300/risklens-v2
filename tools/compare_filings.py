@@ -19,6 +19,7 @@ from core.fetcher    import fetch_two_filings
 from core.extractor  import extract_sections_cached
 from core.delta      import compute_delta
 from core.scorer     import score_sections
+from core.cache      import cache_get, cache_set, make_cache_key
 from schemas         import (
     CompareFilingsOutput,
     FilingMetaOut,
@@ -104,6 +105,12 @@ def register_compare_filings(mcp: FastMCP) -> None:
         if form_type not in ("10-Q", "10-K"):
             raise ToolError("form_type must be '10-Q' or '10-K'.")
 
+        _ck = make_cache_key("compare_filings", ticker, form_type)
+        _hit = cache_get(_ck)
+        if _hit:
+            from pydantic import TypeAdapter
+            return TypeAdapter(CompareFilingsOutput).validate_python(_hit)
+
         try:
             result = await asyncio.wait_for(
                 _run_pipeline(ticker, form_type),
@@ -126,6 +133,8 @@ def register_compare_filings(mcp: FastMCP) -> None:
                 elapsed_seconds=elapsed,
             )
 
+        if result.pipeline_success:
+            cache_set(_ck, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="compare_filings")
         return result
 
 

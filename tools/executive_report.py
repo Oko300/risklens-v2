@@ -21,6 +21,7 @@ from datetime import datetime
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from core.cache      import cache_get, cache_set, make_cache_key
 from core.fetcher    import fetch_two_filings
 from core.extractor  import extract_sections_cached
 from core.delta      import compute_delta
@@ -79,6 +80,12 @@ def register_executive_report(mcp: FastMCP) -> None:
             raise ToolError(f"Invalid ticker: {ticker!r}. Use a US stock symbol like AAPL.")
         if form_type not in ("10-Q", "10-K"):
             raise ToolError("form_type must be '10-Q' or '10-K'.")
+
+        _ck = make_cache_key("generate_executive_report", ticker, form_type)
+        _hit = cache_get(_ck)
+        if _hit:
+            from pydantic import TypeAdapter
+            return TypeAdapter(ExecutiveReportOutput).validate_python(_hit)
 
         try:
             result = await asyncio.wait_for(

@@ -23,6 +23,7 @@ from tools.compare_filings   import register_compare_filings
 from tools.risk_trends       import register_risk_trends
 from tools.risk_categorizer  import register_risk_categorizer
 from tools.executive_report  import register_executive_report
+from tools.eight_k_events    import register_eight_k_events
 from auth.middleware         import ContextAuthASGI, LifespanBridge
 
 mcp = FastMCP(name="RiskLens v2")
@@ -31,6 +32,7 @@ register_compare_filings(mcp)
 register_risk_trends(mcp)
 register_risk_categorizer(mcp)
 register_executive_report(mcp)
+register_eight_k_events(mcp)
 
 if __name__ == "__main__":
     import uvicorn

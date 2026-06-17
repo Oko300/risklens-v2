@@ -3,11 +3,9 @@ tools/risk_categorizer.py — RiskLens v2
 =========================================
 Implements the `categorize_risks` MCP tool.
 
-Fetches the most recent 10-K or 10-Q for a ticker, extracts the Risk Factors
-section, and classifies every identified risk into one of ten standardized
-risk domains. Returns a structured breakdown with representative excerpts,
-signal counts, and an executive summary — ready for board reporting,
-investment memos, or due diligence workflows.
+Fetches the most recent 10-K, 10-Q, or 20-F for a ticker, extracts the
+Risk Factors section, and classifies every identified risk into one of
+ten standardized risk domains. Results are cached for 3-7 days.
 """
 
 import asyncio
@@ -18,9 +16,9 @@ from typing import Literal, Optional
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from core.cache      import cache_get, cache_set, make_cache_key
 from core.fetcher   import fetch_one_filing
 from core.extractor import extract_sections_cached
+from core.cache     import cache_get, cache_set, make_cache_key
 from schemas        import (
     CategorizeRisksOutput,
     RiskCategory,
@@ -29,11 +27,7 @@ from schemas        import (
 )
 
 
-TOOL_TIMEOUT = 60
-
-# ---------------------------------------------------------------------------
-# Risk taxonomy — ten standardized domains with keyword anchors
-# ---------------------------------------------------------------------------
+TOOL_TIMEOUT = 80
 
 RISK_TAXONOMY: dict[str, dict] = {
     "financial": {
@@ -150,14 +144,14 @@ def register_risk_categorizer(mcp: FastMCP) -> None:
     @mcp.tool()
     async def categorize_risks(
         ticker: str,
-        form_type: Literal["10-Q", "10-K"] = "10-K",
+        form_type: Literal["10-Q", "10-K", "20-F"] = "10-K",
     ) -> CategorizeRisksOutput:
         """
         Categorize and summarize all risk factors disclosed in a SEC filing.
 
-        Fetches the most recent 10-K or 10-Q for a US public company, extracts
-        the Risk Factors section (Item 1A), and classifies every identified risk
-        into one of ten standardized risk domains:
+        Fetches the most recent 10-K, 10-Q, or 20-F for a public company,
+        extracts the Risk Factors section, and classifies every identified
+        risk into one of ten standardized risk domains:
 
           1.  Financial & Liquidity Risk
           2.  Legal & Regulatory Risk
@@ -175,35 +169,33 @@ def register_risk_categorizer(mcp: FastMCP) -> None:
 
         An executive summary is generated that ranks categories by signal density,
         calls out Tier 1 (critical) risks, and provides a plain-English risk
-        profile suitable for board reporting, investment memos, or due diligence.
+        profile. Results are cached for 3-7 days.
 
         Use `compare_filings` if you want to see how risks changed between filings.
         Use `analyze_risk_trends` if you want a multi-year risk trajectory.
 
         Args:
             ticker:    US stock ticker symbol (e.g. AAPL, MSFT, TSLA, JPM).
-            form_type: '10-K' (annual, recommended — contains full Risk Factors)
-                       or '10-Q' (quarterly, may incorporate by reference).
-                       Defaults to '10-K'.
+            form_type: '10-K' (annual, recommended), '10-Q' (quarterly,
+                       may incorporate by reference), or '20-F' (foreign
+                       private issuer). Defaults to '10-K'.
 
         Returns:
             CategorizeRisksOutput with a list of RiskCategoryDetail objects
-            (one per matched domain), ranked by signal count, plus an
-            executive summary and coverage metadata.
+            ranked by signal count, plus an executive summary.
         """
         start = time.monotonic()
 
         ticker = ticker.upper().strip()
         if not ticker or not ticker.replace("-", "").replace(".", "").isalpha():
             raise ToolError(f"Invalid ticker: {ticker!r}.")
-        if form_type not in ("10-Q", "10-K"):
-            raise ToolError("form_type must be '10-Q' or '10-K'.")
+        if form_type not in ("10-Q", "10-K", "20-F"):
+            raise ToolError("form_type must be '10-Q', '10-K', or '20-F'.")
 
-        _ck = make_cache_key("categorize_risks", ticker, form_type)
-        _hit = cache_get(_ck)
-        if _hit:
-            from pydantic import TypeAdapter
-            return TypeAdapter(CategorizeRisksOutput).validate_python(_hit)
+        cache_key = make_cache_key("categorize_risks", ticker, form_type)
+        cached = cache_get(cache_key)
+        if cached:
+            return CategorizeRisksOutput(**cached)
 
         try:
             result = await asyncio.wait_for(
@@ -236,7 +228,8 @@ def register_risk_categorizer(mcp: FastMCP) -> None:
             )
 
         if result.pipeline_success:
-            cache_set(_ck, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="categorize_risks")
+            cache_set(cache_key, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="categorize_risks")
+
         return result
 
 
@@ -268,6 +261,7 @@ async def _run_categorizer_pipeline(
         accession=filing.accession_number,
         filing_date=filing.filing_date,
         form_type=form_type,
+        document_url=filing.document_url,
     )
 
     rf = extraction.risk_factors
@@ -307,11 +301,6 @@ async def _run_categorizer_pipeline(
 # ---------------------------------------------------------------------------
 
 def _categorize(risk_text: str) -> list[RiskCategoryDetail]:
-    """
-    Scan risk_text against every taxonomy domain.
-    Returns a list of RiskCategoryDetail sorted by signal_count descending.
-    Only includes categories with at least one keyword match.
-    """
     text_lower    = risk_text.lower()
     sentences     = _split_sentences(risk_text)
     results: list[RiskCategoryDetail] = []
@@ -324,7 +313,6 @@ def _categorize(risk_text: str) -> list[RiskCategoryDetail]:
         for kw in spec["keywords"]:
             if kw.lower() in text_lower:
                 matched_signals.append(kw)
-                # Find the first sentence containing this keyword for context
                 for sent in sentences:
                     if kw.lower() in sent.lower() and sent not in seen_excerpts:
                         excerpts.append(sent[:250])
@@ -340,16 +328,14 @@ def _categorize(risk_text: str) -> list[RiskCategoryDetail]:
             tier=spec["tier"],
             signal_count=len(matched_signals),
             matched_signals=matched_signals,
-            excerpts=excerpts[:5],    # top 5 illustrative excerpts
+            excerpts=excerpts[:5],
         ))
 
-    # Sort: tier first (1 = most critical), then signal_count descending
     results.sort(key=lambda r: (r.tier, -r.signal_count))
     return results
 
 
 def _split_sentences(text: str) -> list[str]:
-    """Light sentence splitter — good enough for excerpt extraction."""
     raw = re.split(r'(?<=[.!?])\s+(?=[A-Z"\'(])', text)
     return [s.strip() for s in raw if len(s.strip()) >= 20]
 
@@ -382,7 +368,6 @@ def _build_exec_summary(
         ranked = ", ".join(f"{c.label} ({c.signal_count})" for c in top_cats)
         parts.append(f"Top domains by signal density: {ranked}.")
 
-    # Dominant risk theme
     if categories:
         top = categories[0]
         parts.append(

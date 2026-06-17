@@ -5,12 +5,17 @@ EDGAR fetcher: ticker → CIK → N most recent filings → raw HTML.
 
 Public API
 ----------
-  fetch_two_filings(ticker, form_type)         → FetcherResult (2 filings)
-  fetch_n_filings(ticker, form_type, n)        → list[FilingHTMLMeta] (N filings)
+  fetch_two_filings(ticker, form_type)         → FetcherResult (2 filings, fetched in PARALLEL)
+  fetch_n_filings(ticker, form_type, n)        → list[FilingHTMLMeta] (N filings, parallel)
   fetch_one_filing(ticker, form_type)          → FilingHTMLMeta | None (1 filing)
 
 All functions are async. All failures are isolated — the caller is never
 surprised by an uncaught exception from the networking layer.
+
+PERFORMANCE FIX: fetch_two_filings now fetches the newer and older HTML
+documents concurrently with asyncio.gather instead of sequentially.
+On large filers (JPM, AAPL, MSFT) this roughly halves end-to-end latency
+and is the primary fix for timeout failures on big 10-K filings.
 
 Networking hardening
 --------------------
@@ -45,18 +50,27 @@ HEADERS    = {
 TIMEOUT_CIK         = 20
 TIMEOUT_SUBMISSIONS = 15
 TIMEOUT_INDEX       = 20
-TIMEOUT_HTML        = 45
-PIPELINE_TIMEOUT    = 90.0
+TIMEOUT_HTML        = 60   # raised for very large 10-K filings (JPM etc.)
+PIPELINE_TIMEOUT    = 110.0
 
 MAX_RETRIES         = 3
 BACKOFF_BASE        = 1.0
 BACKOFF_JITTER_MAX  = 0.5
 MIN_REMAINING_S     = 3.0
 
-CONCURRENT_LIMIT    = 2
+CONCURRENT_LIMIT    = 3   # raised slightly to support parallel fetch of 2 filings
 INTER_REQUEST_DELAY = 0.15
 
-ALLOWED_FORM_TYPES  = {"10-Q", "10-K"}
+# Full filing coverage: core risk filings + event/governance/ownership filings.
+# Fetcher stays generic — each form type's text/XML extraction lives in its
+# own core module (extractor.py, eight_k.py, proxy.py, insider.py, ownership.py).
+ALLOWED_FORM_TYPES  = {
+    "10-Q", "10-K", "20-F",          # core risk filings (text-based)
+    "8-K",                            # material events
+    "DEF 14A",                         # proxy statement
+    "4",                                # insider trading (XML)
+    "SC 13D", "SC 13G", "13F-HR",         # ownership filings
+}
 
 _RETRYABLE = (
     httpx.ConnectTimeout,
@@ -98,8 +112,8 @@ async def _get_client() -> httpx.AsyncClient:
                 follow_redirects=True,
                 timeout=httpx.Timeout(20.0),
                 limits=httpx.Limits(
-                    max_connections=10,
-                    max_keepalive_connections=5,
+                    max_connections=12,
+                    max_keepalive_connections=6,
                     keepalive_expiry=30,
                 ),
             )
@@ -186,7 +200,6 @@ async def _get_json(url: str, step_timeout: float, deadline: float) -> dict:
 
 @dataclass
 class FilingMeta:
-    """Metadata for a single filing (no HTML)."""
     ticker:           str
     cik:              str
     form_type:        str
@@ -202,7 +215,6 @@ class FilingMeta:
 
 @dataclass
 class FilingHTMLMeta:
-    """FilingMeta + fetched HTML — used by fetch_n_filings / fetch_one_filing."""
     ticker:           str
     cik:              str
     form_type:        str
@@ -218,7 +230,6 @@ class FilingHTMLMeta:
 
 @dataclass
 class FetcherResult:
-    """Result type for fetch_two_filings (backward compatibility)."""
     ticker:            str
     cik:               str
     form_type:         str
@@ -237,10 +248,17 @@ class FetcherResult:
 
 async def fetch_two_filings(
     ticker:        str,
-    form_type:     Literal["10-Q", "10-K"] = "10-Q",
+    form_type:     str = "10-Q",
     timeout_total: float = PIPELINE_TIMEOUT,
 ) -> FetcherResult:
-    """Fetch the two most recent filings. Returns FetcherResult."""
+    """
+    Fetch the two most recent filings.
+
+    PERFORMANCE FIX: the two HTML documents are fetched concurrently via
+    asyncio.gather instead of sequentially. This roughly halves wall-clock
+    time on large filers and is the primary fix for prior timeout issues
+    on big 10-K filings (e.g. JPM).
+    """
     if form_type not in ALLOWED_FORM_TYPES:
         return _fail(ticker, "", form_type, f"form_type must be one of {ALLOWED_FORM_TYPES}")
 
@@ -271,8 +289,12 @@ async def fetch_two_filings(
         )
 
     newer_meta, older_meta = filings[0], filings[1]
-    newer_html, newer_meta = await _fetch_filing_html(newer_meta, deadline)
-    older_html, older_meta = await _fetch_filing_html(older_meta, deadline)
+
+    # ── PARALLEL FETCH (the actual fix) ────────────────────────────────────
+    (newer_html, newer_meta), (older_html, older_meta) = await asyncio.gather(
+        _fetch_filing_html(newer_meta, deadline),
+        _fetch_filing_html(older_meta, deadline),
+    )
 
     ok       = newer_meta.fetch_success and older_meta.fetch_success
     fail_msg = None
@@ -294,23 +316,22 @@ async def fetch_two_filings(
 
 async def fetch_n_filings(
     ticker:        str,
-    form_type:     Literal["10-Q", "10-K"] = "10-K",
+    form_type:     str = "10-K",
     n:             int  = 4,
     timeout_total: float = PIPELINE_TIMEOUT * 2,
 ) -> list[FilingHTMLMeta]:
     """
-    Fetch the N most recent filings with HTML for multi-year trend analysis.
-
+    Fetch the N most recent filings with HTML, fetched concurrently.
     Returns a list of FilingHTMLMeta sorted newest-first.
     Failures are isolated per filing (fetch_success=False, html=None).
     """
-    n        = max(2, min(n, 8))
+    n        = max(1, min(n, 10))
     ticker   = ticker.upper().strip()
     deadline = time.monotonic() + timeout_total
 
     try:
         cik = await _resolve_cik(ticker, deadline)
-    except Exception as exc:
+    except Exception:
         return []
 
     try:
@@ -318,9 +339,6 @@ async def fetch_n_filings(
     except Exception:
         return []
 
-    results: list[FilingHTMLMeta] = []
-
-    # Fetch HTML concurrently (but rate-limited by the semaphore)
     async def _fetch_one(meta: FilingMeta) -> FilingHTMLMeta:
         html, updated = await _fetch_filing_html(meta, deadline)
         return FilingHTMLMeta(
@@ -336,9 +354,9 @@ async def fetch_n_filings(
     tasks   = [_fetch_one(f) for f in filings[:n]]
     fetched = await asyncio.gather(*tasks, return_exceptions=True)
 
+    results: list[FilingHTMLMeta] = []
     for item in fetched:
         if isinstance(item, Exception):
-            # Replace with a failed placeholder
             results.append(FilingHTMLMeta(
                 ticker=ticker, cik=cik, form_type=form_type,
                 accession_number="", filing_date="", report_date="",
@@ -354,7 +372,7 @@ async def fetch_n_filings(
 
 async def fetch_one_filing(
     ticker:        str,
-    form_type:     Literal["10-Q", "10-K"] = "10-K",
+    form_type:     str = "10-K",
     timeout_total: float = PIPELINE_TIMEOUT,
 ) -> Optional[FilingHTMLMeta]:
     """Fetch the single most recent filing with HTML. Returns None on failure."""
@@ -427,34 +445,36 @@ async def _get_filing_list(
     ticker_name = data.get("tickers", [""])[0] or cik
     results: list[FilingMeta] = []
 
-    for f in all_filings[:max_results]:
+    # Resolve document URLs concurrently too (small win on n_filings > 2)
+    async def _resolve_one(f: dict) -> FilingMeta:
         if deadline - time.monotonic() < MIN_REMAINING_S:
-            results.append(FilingMeta(
+            return FilingMeta(
                 ticker=ticker_name, cik=cik, form_type=form_type,
                 accession_number=f["accession"],
                 filing_date=f["filing_date"], report_date=f["report_date"],
                 document_url="", fetch_success=False,
                 failure_reason="Deadline reached before document URL lookup",
-            ))
-            continue
+            )
         try:
             doc_url = await _resolve_primary_document(cik, f["accession"], deadline)
-            results.append(FilingMeta(
+            return FilingMeta(
                 ticker=ticker_name, cik=cik, form_type=form_type,
                 accession_number=f["accession"],
                 filing_date=f["filing_date"], report_date=f["report_date"],
                 document_url=doc_url,
-            ))
+            )
         except Exception as exc:
-            results.append(FilingMeta(
+            return FilingMeta(
                 ticker=ticker_name, cik=cik, form_type=form_type,
                 accession_number=f["accession"],
                 filing_date=f["filing_date"], report_date=f["report_date"],
                 document_url="", fetch_success=False,
                 failure_reason=f"Document URL resolution failed: {type(exc).__name__}: {exc}",
-            ))
+            )
 
-    return results
+    tasks = [_resolve_one(f) for f in all_filings[:max_results]]
+    results = await asyncio.gather(*tasks)
+    return list(results)
 
 
 def _extract_filings_from_submissions(data: dict, form_type: str) -> list[dict]:

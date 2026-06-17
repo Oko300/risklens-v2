@@ -1,63 +1,55 @@
 """
 tools/eight_k_events.py — RiskLens v2
 =======================================
-8-K material event analysis — COMING SOON.
-
-8-K filings are real-time disclosures of material events:
-  Item 1.01 — Entry into material agreement
-  Item 1.02 — Termination of material agreement
-  Item 1.03 — Bankruptcy or receivership
-  Item 2.01 — Completion of acquisition
-  Item 2.02 — Results of operations (earnings)
-  Item 4.01 — Changes in auditor
-  Item 5.02 — Executive changes (CEO/CFO departure)
-  Item 7.01 — Regulation FD disclosure
-  Item 8.01 — Other events
-  Item 9.01 — Financial statements and exhibits
-
-Architecture is ready — implementation ships in the next release.
-The fetcher, extractor, and scorer are all designed to support 8-K.
+Implements the `analyze_8k_events` MCP tool — real-time material event
+intelligence from 8-K filings, mapped to the same risk-materiality
+framework as Risk Factors and MD&A.
 """
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+
+from core.eight_k import analyze_8k_filings
 from schemas import EightKOutput
 
 
 def register_eight_k_events(mcp: FastMCP) -> None:
 
     @mcp.tool()
-    async def analyze_8k_events(ticker: str) -> EightKOutput:
+    async def analyze_8k_events(ticker: str, n_filings: int = 5) -> EightKOutput:
         """
         Analyze recent 8-K material event filings for a US public company.
 
         8-K filings are real-time disclosures companies must file within 4
-        business days of a material event. This tool identifies, classifies,
-        and scores the risk impact of recent 8-K events including:
+        business days of a material event. This tool extracts every numbered
+        Item section (e.g. Item 5.02 executive departures, Item 1.03
+        bankruptcy, Item 2.02 earnings) from the most recent filings and maps
+        each to a risk-materiality tier:
 
-          • Executive leadership changes (CEO/CFO departures)
-          • Earnings releases and revenue guidance
-          • Material contract signings or terminations
-          • Bankruptcy or receivership filings
-          • Auditor changes
-          • Acquisitions and divestitures
-          • Regulation FD disclosures
+          CRITICAL — bankruptcy, change of control, auditor change/non-reliance,
+                      delisting notice, acceleration of debt obligations
+          HIGH     — executive departures, M&A completion, earnings releases,
+                      material contract signings/terminations, impairments
+          MODERATE — bylaw amendments, equity sales, Reg FD disclosures
+          LOW      — code of ethics updates, exhibit-only filings
 
-        Coming in the next release. Use compare_filings or
-        generate_executive_report for current risk analysis.
+        Use this tool when you want to know "what just happened" rather than
+        the standing risk disclosures in a 10-K/10-Q. Combine with
+        compare_filings for full risk context.
 
         Args:
-            ticker: US stock ticker symbol (e.g. AAPL, MSFT, TSLA).
+            ticker:    US stock ticker symbol (e.g. AAPL, MSFT, TSLA).
+            n_filings: Number of recent 8-K filings to scan (1-10). Default 5.
+
+        Returns:
+            EightKOutput with every detected Item event, its materiality tier,
+            an excerpt, and the single highest-risk event found across the window.
         """
-        return EightKOutput(
-            ticker=ticker.upper().strip(),
-            pipeline_success=False,
-            failure_reason=(
-                "8-K analysis is coming in the next release. "
-                "Use generate_executive_report or compare_filings for current risk analysis."
-            ),
-            events=[],
-            filing_count=0,
-            highest_risk_event=None,
-            elapsed_seconds=0.0,
-        )
+        ticker = ticker.upper().strip()
+        if not ticker or not ticker.replace("-", "").replace(".", "").isalpha():
+            raise ToolError(f"Invalid ticker: {ticker!r}. Use a US stock symbol like AAPL.")
+        n_filings = max(1, min(n_filings, 10))
+
+        result = await analyze_8k_filings(ticker, n_filings=n_filings)
+        result.pop("from_cache", None)
+        return EightKOutput(**result)

@@ -5,8 +5,9 @@ Implements the `analyze_risk_trends` MCP tool.
 
 Fetches up to N filings (default 4, max 8) and tracks how Risk Factors and
 MD&A materially evolve over time. Returns a timeline of materiality scores,
-signal appearances/disappearances, and a structured trend narrative — giving
-analysts a longitudinal view that a single filing comparison cannot provide.
+signal appearances/disappearances, and a structured trend narrative.
+
+Results are cached for 3-7 days — repeat calls return instantly.
 """
 
 import asyncio
@@ -16,11 +17,10 @@ from typing import Literal, Optional
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from core.cache      import cache_get, cache_set, make_cache_key
 from core.fetcher   import fetch_n_filings
 from core.extractor import extract_sections_cached
 from core.scorer    import score_sections
-from core.delta     import compute_delta
+from core.cache     import cache_get, cache_set, make_cache_key
 from schemas        import (
     RiskTrendsOutput,
     TrendPoint,
@@ -29,7 +29,7 @@ from schemas        import (
 )
 
 
-TOOL_TIMEOUT  = 110   # seconds — fetching N filings takes longer
+TOOL_TIMEOUT  = 130   # seconds — fetching N filings takes longer
 MAX_FILINGS   = 8
 DEFAULT_N     = 4
 
@@ -44,58 +44,55 @@ def register_risk_trends(mcp: FastMCP) -> None:
     @mcp.tool()
     async def analyze_risk_trends(
         ticker: str,
-        form_type: Literal["10-Q", "10-K"] = "10-K",
+        form_type: Literal["10-Q", "10-K", "20-F"] = "10-K",
         n_filings: int = DEFAULT_N,
     ) -> RiskTrendsOutput:
         """
         Track how a company's risk profile evolves across multiple filings.
 
-        Fetches the N most recent 10-Q or 10-K filings for a US public company
-        and builds a longitudinal risk timeline. For each consecutive filing pair
-        the tool computes a materiality score and tracks which risk signals
-        appeared, disappeared, or intensified.
+        Fetches the N most recent 10-K, 10-Q, or 20-F filings for a public
+        company and builds a longitudinal risk timeline. For each filing the
+        tool computes a materiality score and tracks which risk signals
+        appeared, disappeared, or intensified versus the prior period.
 
         This is the right tool when you want to answer questions like:
           - "Has this company's risk profile been deteriorating over two years?"
           - "When did 'going concern' language first appear in their filings?"
           - "How has the MD&A tone shifted across the last four quarters?"
-          - "Is the recent spike in litigation risk new, or a long-running pattern?"
 
         For a single head-to-head comparison of the two most recent filings,
-        use `compare_filings` instead.
+        use `compare_filings` instead. Results are cached for 3-7 days.
 
         Note on 10-Q Risk Factors: many 10-Q filings incorporate Risk Factors
-        by reference from the annual 10-K. When this is detected for a filing,
-        that data point is excluded from the risk trend line and flagged.
-        Use form_type='10-K' for a clean multi-year risk factor trend.
+        by reference from the annual 10-K. Use form_type='10-K' for a clean
+        multi-year risk factor trend.
 
         Args:
             ticker:    US stock ticker symbol (e.g. AAPL, MSFT, TSLA, JPM).
-            form_type: '10-K' for annual trend (recommended) or '10-Q' for quarterly.
+            form_type: '10-K' for annual trend (recommended), '10-Q' for
+                       quarterly, or '20-F' for foreign private issuers.
                        Defaults to '10-K'.
-            n_filings: Number of filings to include in the trend (2–8).
-                       Defaults to 4. More filings = longer run time.
+            n_filings: Number of filings to include in the trend (2-8).
+                       Defaults to 4.
 
         Returns:
-            RiskTrendsOutput containing a timeline of TrendPoints (one per
-            filing), signal appearance/disappearance events, and a TrendSummary
-            with overall trajectory assessment and key turning points.
+            RiskTrendsOutput containing a timeline of TrendPoints, signal
+            appearance/disappearance events, and a TrendSummary.
         """
         start = time.monotonic()
 
         ticker = ticker.upper().strip()
         if not ticker or not ticker.replace("-", "").replace(".", "").isalpha():
             raise ToolError(f"Invalid ticker: {ticker!r}.")
-        if form_type not in ("10-Q", "10-K"):
-            raise ToolError("form_type must be '10-Q' or '10-K'.")
+        if form_type not in ("10-Q", "10-K", "20-F"):
+            raise ToolError("form_type must be '10-Q', '10-K', or '20-F'.")
 
         n_filings = max(2, min(n_filings, MAX_FILINGS))
 
-        _ck = make_cache_key("analyze_risk_trends", ticker, form_type, str(n_filings))
-        _hit = cache_get(_ck)
-        if _hit:
-            from pydantic import TypeAdapter
-            return TypeAdapter(RiskTrendsOutput).validate_python(_hit)
+        cache_key = make_cache_key("analyze_risk_trends", ticker, form_type, str(n_filings))
+        cached = cache_get(cache_key)
+        if cached:
+            return RiskTrendsOutput(**cached)
 
         try:
             result = await asyncio.wait_for(
@@ -108,7 +105,7 @@ def register_risk_trends(mcp: FastMCP) -> None:
                 ticker=ticker, form_type=form_type,
                 n_requested=n_filings, n_processed=0,
                 pipeline_success=False,
-                failure_reason=f"Pipeline timed out after {TOOL_TIMEOUT}s",
+                failure_reason=f"Pipeline timed out after {TOOL_TIMEOUT}s. Try a smaller n_filings.",
                 trend_points=[], signal_appearances=[], signal_removals=[],
                 summary=None,
                 elapsed_seconds=round(elapsed, 2),
@@ -126,7 +123,8 @@ def register_risk_trends(mcp: FastMCP) -> None:
             )
 
         if result.pipeline_success:
-            cache_set(_ck, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="analyze_risk_trends")
+            cache_set(cache_key, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="analyze_risk_trends")
+
         return result
 
 
@@ -139,7 +137,6 @@ async def _run_trends_pipeline(
 ) -> RiskTrendsOutput:
     start = time.monotonic()
 
-    # Fetch up to n_filings from EDGAR
     filings = await fetch_n_filings(ticker, form_type, n=n_filings)
 
     if not filings:
@@ -153,13 +150,13 @@ async def _run_trends_pipeline(
             elapsed_seconds=round(time.monotonic() - start, 2),
         )
 
-    # Extract sections for all filings concurrently
     extraction_tasks = [
         extract_sections_cached(
             f.html or "",
             accession=f.accession_number,
             filing_date=f.filing_date,
             form_type=form_type,
+            document_url=f.document_url,
         )
         for f in filings
         if f.fetch_success and f.html
@@ -168,7 +165,6 @@ async def _run_trends_pipeline(
     valid_filings = [f for f in filings if f.fetch_success and f.html]
     extractions   = await asyncio.gather(*extraction_tasks, return_exceptions=True)
 
-    # Build trend points (oldest first)
     paired = list(zip(valid_filings, extractions))
     paired.reverse()   # chronological order
 
@@ -193,7 +189,6 @@ async def _run_trends_pipeline(
             all_signal_sets.append(set())
             continue
 
-        # Score each filing against itself (absolute signal presence)
         score = score_sections(
             newer_risk_text=extraction.risk_factors.text,
             older_risk_text=None,
@@ -227,7 +222,6 @@ async def _run_trends_pipeline(
             top_signals=top_signals,
         ))
 
-    # Track signal appearances and removals across consecutive filings
     signal_appearances: list[TrendSignalAppearance] = []
     signal_removals:    list[TrendSignalAppearance] = []
 
@@ -288,7 +282,6 @@ def _build_trend_summary(
         )
 
     risk_scores    = [p.risk_raw_score for p in points]
-    peak_idx       = risk_scores.index(max(risk_scores))
     first_score    = risk_scores[0]
     last_score     = risk_scores[-1]
     score_delta    = last_score - first_score
@@ -303,12 +296,10 @@ def _build_trend_summary(
     else:
         trajectory = "single_point"
 
-    # Identify the highest-materiality period
     materiality_vals = [_MATERIALITY_ORDER.get(p.risk_materiality, -1) for p in points]
     peak_mat_idx     = materiality_vals.index(max(materiality_vals))
     peak_point       = points[peak_mat_idx]
 
-    # Build narrative
     period_str = f"{points[0].filing_date} → {points[-1].filing_date}"
     parts = [
         f"Risk trend for {len(points)} {('annual' if len(points) <= 4 else 'quarterly')} "

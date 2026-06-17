@@ -69,6 +69,7 @@ class SectionResult:
     char_count: int = 0
     confidence_score: float = 0.0
     coverage_gap_note: Optional[str] = None
+    source_reference: Optional[str] = None   # provenance: filing URL + item label for deep-linking
 
     def __post_init__(self):
         if self.text:
@@ -158,6 +159,7 @@ def _section_to_dict(s: SectionResult) -> dict:
         "char_count":         s.char_count,
         "confidence_score":   s.confidence_score,
         "coverage_gap_note":  s.coverage_gap_note,
+        "source_reference":   s.source_reference,
     }
 
 
@@ -172,6 +174,7 @@ def _section_from_dict(d: dict) -> SectionResult:
         char_count=d["char_count"],
         confidence_score=d["confidence_score"],
         coverage_gap_note=d["coverage_gap_note"],
+        source_reference=d.get("source_reference"),
     )
 
 
@@ -205,6 +208,51 @@ def _result_from_json(raw: str) -> ExtractionResult:
 # ---------------------------------------------------------------------------
 
 def _build_specs(form_type: str) -> dict:
+    # 20-F (foreign private issuers, e.g. TSMC, Alibaba, ASML): Risk Factors
+    # live under Item 3.D, and the MD&A equivalent is Item 5 "Operating and
+    # Financial Review and Prospects" instead of Item 1A / Item 7.
+    if form_type == "20-F":
+        risk_spec = {
+            "item_label": "Item 3.D",
+            "display":    "Risk Factors",
+            "start_patterns": [
+                r"item\s+3\.?\s*d[\.\s\u2014\-\u2013]+risk\s+factors",
+                r"item\s+3\.?\s*d\b",
+                r"d\.\s+risk\s+factors",
+            ],
+            "end_patterns": [
+                r"item\s+4\b",
+                r"item\s+3\.?\s*e\b",
+            ],
+            "next_items": ["item 4", "item 3.e"],
+            "keywords": [
+                "risk", "could", "may", "uncertain", "adverse", "material",
+                "competition", "regulatory", "harm", "impact", "exposure",
+                "liability", "loss", "failure", "breach",
+            ],
+            "pattern_min_chars": 1_500,
+        }
+        mda_spec = {
+            "item_label": "Item 5",
+            "display":    "Operating and Financial Review and Prospects",
+            "start_patterns": [
+                r"item\s+5[\.\s\u2014\-\u2013]+operating\s+and\s+financial",
+                r"item\s+5[\.\s]+operating",
+                r"item\s+5\b",
+            ],
+            "end_patterns": [
+                r"item\s+6\b",
+            ],
+            "next_items": ["item 6"],
+            "keywords": [
+                "revenue", "operating", "liquidity", "results", "cash",
+                "quarter", "year", "income", "loss", "expense", "financial",
+                "increased", "decreased", "compared", "net",
+            ],
+            "pattern_min_chars": 4_000,
+        }
+        return {"risk_factors": risk_spec, "mda": mda_spec}
+
     risk_spec = {
         "item_label": "Item 1A",
         "display":    "Risk Factors",
@@ -283,6 +331,7 @@ async def extract_sections_cached(
     accession: str = "",
     filing_date: str = "",
     form_type: str = "10-Q",
+    document_url: str = "",
 ) -> ExtractionResult:
     """
     Async extract with Redis caching.
@@ -297,7 +346,7 @@ async def extract_sections_cached(
         except Exception:
             pass
 
-    result = extract_sections(html, accession, filing_date, form_type)
+    result = extract_sections(html, accession, filing_date, form_type, document_url)
 
     try:
         await _cache_set(cache_key, _result_to_json(result), REDIS_TTL_EXTRACTION)
@@ -312,6 +361,7 @@ def extract_sections(
     accession: str = "",
     filing_date: str = "",
     form_type: str = "10-Q",
+    document_url: str = "",
 ) -> ExtractionResult:
     soup            = BeautifulSoup(html, "lxml")
     _strip_boilerplate(soup)
@@ -321,6 +371,12 @@ def extract_sections(
 
     risk_result = _extract_section(soup, full_text, "risk_factors", specs, accession, form_type)
     mda_result  = _extract_section(soup, full_text, "mda",          specs, accession, form_type)
+
+    # Provenance: attach a deep-linkable source reference to each section
+    if document_url:
+        risk_result.source_reference = f"{document_url}#{specs['risk_factors']['item_label'].replace(' ', '')}"
+        mda_result.source_reference  = f"{document_url}#{specs['mda']['item_label'].replace(' ', '')}"
+
     gaps        = _identify_gaps(risk_result, mda_result, full_char_count)
 
     return ExtractionResult(

@@ -1,11 +1,15 @@
 """
 tools/compare_filings.py — RiskLens v2
-=======================================
+=========================================
 Implements the `compare_filings` MCP tool.
 
-Compares the two most recent 10-Q or 10-K filings for any US public company.
-Runs the full pipeline: EDGAR fetch → section extraction → sentence-level
-delta → materiality scoring.
+Compares the two most recent 10-Q, 10-K, or 20-F filings for any US (or
+foreign-private-issuer) public company. Runs the full pipeline: EDGAR
+fetch → section extraction → sentence-level delta → materiality scoring.
+
+PERFORMANCE: the two filings are fetched concurrently (core/fetcher.py),
+and results are cached for 3-7 days (core/cache.py) — repeat queries for
+the same ticker/form_type return instantly without re-hitting EDGAR.
 """
 
 import asyncio
@@ -33,7 +37,7 @@ from schemas         import (
     SignalHitOut,
 )
 
-TOOL_TIMEOUT = 55
+TOOL_TIMEOUT = 100
 
 MDA_MIN_CHARS              = 5_000
 RISK_FACTORS_MIN_CHARS_10K = 2_000
@@ -47,11 +51,10 @@ _RF_REFERENCE_PHRASES = [
 _RF_REFERENCE_CHAR_THRESHOLD = 3_000
 
 _COVERAGE_GAP = (
-    "RiskLens v2 analyzes 10-Q and 10-K filings only. "
-    "Only Risk Factors (Item 1A) and MD&A (Item 7) sections are compared. "
+    "RiskLens v2 analyzes 10-K, 10-Q, and 20-F filings for the core risk pipeline. "
+    "Only Risk Factors and MD&A (or 20-F equivalents) are compared. "
     "Only the two most recent filings are compared per call. "
-    "XBRL inline filings, exhibits, and amendments are not separately processed. "
-    "Foreign private issuers (20-F) are not supported. "
+    "Results are cached for 3-7 days; cached responses return instantly. "
     "Many 10-Q filings incorporate Risk Factors by reference from the annual 10-K — "
     "use form_type='10-K' for annual risk factor comparisons."
 )
@@ -67,49 +70,50 @@ def register_compare_filings(mcp: FastMCP) -> None:
     @mcp.tool()
     async def compare_filings(
         ticker: str,
-        form_type: Literal["10-Q", "10-K"] = "10-Q",
+        form_type: Literal["10-Q", "10-K", "20-F"] = "10-Q",
     ) -> CompareFilingsOutput:
         """
-        Compare the two most recent SEC filings for a US public company.
+        Compare the two most recent SEC filings for a public company.
 
-        Fetches the two most recent 10-Q or 10-K filings directly from EDGAR,
-        extracts Risk Factors (Item 1A) and Management's Discussion and Analysis
-        (MD&A / Item 7), runs a sentence-level diff between them, and scores
-        each section for materiality using a tiered financial signal library.
+        Fetches the two most recent 10-K, 10-Q, or 20-F (foreign private
+        issuer annual report) filings directly from EDGAR, extracts Risk
+        Factors and MD&A (or the 20-F equivalents: Item 3.D and Item 5),
+        runs a sentence-level diff between them, and scores each section
+        for materiality using a tiered financial signal library.
 
-        The result is a fully structured JSON object ready for downstream
-        analysis, summarization, or display.
+        Results are cached for 3-7 days — a repeat call for the same
+        ticker/form_type returns instantly instead of re-fetching EDGAR.
 
         Risk Factors note
         -----------------
-        Most S&P 500 10-Q filings incorporate Risk Factors by reference from the
-        annual 10-K. When this pattern is detected the tool flags it explicitly
-        and skips the delta rather than producing a misleading comparison.
-        Use form_type='10-K' for reliable annual risk factor comparisons.
+        Most S&P 500 10-Q filings incorporate Risk Factors by reference from
+        the annual 10-K. When detected the tool flags it explicitly and skips
+        the delta rather than producing a misleading comparison. Use
+        form_type='10-K' for reliable annual risk factor comparisons.
 
         Args:
             ticker:    US stock ticker symbol (e.g. AAPL, MSFT, TSLA, JPM).
-            form_type: '10-Q' for quarterly filings or '10-K' for annual filings.
+            form_type: '10-Q' (quarterly), '10-K' (annual), or '20-F'
+                       (foreign private issuer annual report, e.g. TSM, BABA, ASML).
                        Defaults to '10-Q'.
 
         Returns:
             CompareFilingsOutput with nested filing metadata, extraction
             diagnostics, sentence-level delta, and materiality scores for
-            both Risk Factors and MD&A.
+            both sections.
         """
         start = time.monotonic()
 
         ticker = ticker.upper().strip()
         if not ticker or not ticker.replace("-", "").replace(".", "").isalpha():
             raise ToolError(f"Invalid ticker: {ticker!r}. Must be alphabetic (e.g. AAPL).")
-        if form_type not in ("10-Q", "10-K"):
-            raise ToolError("form_type must be '10-Q' or '10-K'.")
+        if form_type not in ("10-Q", "10-K", "20-F"):
+            raise ToolError("form_type must be '10-Q', '10-K', or '20-F'.")
 
-        _ck = make_cache_key("compare_filings", ticker, form_type)
-        _hit = cache_get(_ck)
-        if _hit:
-            from pydantic import TypeAdapter
-            return TypeAdapter(CompareFilingsOutput).validate_python(_hit)
+        cache_key = make_cache_key("compare_filings", ticker, form_type)
+        cached = cache_get(cache_key)
+        if cached:
+            return CompareFilingsOutput(**cached)
 
         try:
             result = await asyncio.wait_for(
@@ -121,7 +125,10 @@ def register_compare_filings(mcp: FastMCP) -> None:
             return _build_output(
                 ticker=ticker, form_type=form_type,
                 pipeline_success=False,
-                failure_reason=f"Pipeline timed out after {TOOL_TIMEOUT}s",
+                failure_reason=(
+                    f"Pipeline timed out after {TOOL_TIMEOUT}s. Large filings (e.g. JPM, BAC) "
+                    f"can take longer on first fetch — try again, the result will be cached."
+                ),
                 elapsed_seconds=elapsed,
             )
         except Exception as exc:
@@ -134,7 +141,8 @@ def register_compare_filings(mcp: FastMCP) -> None:
             )
 
         if result.pipeline_success:
-            cache_set(_ck, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="compare_filings")
+            cache_set(cache_key, result.model_dump(), ticker=ticker, form_type=form_type, tool_name="compare_filings")
+
         return result
 
 
@@ -163,12 +171,14 @@ async def _run_pipeline(ticker: str, form_type: str) -> CompareFilingsOutput:
             accession=fetch_result.newer.accession_number if fetch_result.newer else "",
             filing_date=fetch_result.newer.filing_date   if fetch_result.newer else "",
             form_type=form_type,
+            document_url=fetch_result.newer.document_url if fetch_result.newer else "",
         ),
         extract_sections_cached(
             fetch_result.older_html or "",
             accession=fetch_result.older.accession_number if fetch_result.older else "",
             filing_date=fetch_result.older.filing_date   if fetch_result.older else "",
             form_type=form_type,
+            document_url=fetch_result.older.document_url if fetch_result.older else "",
         ),
     )
 
@@ -254,7 +264,7 @@ def _check_extraction_sanity(newer_extraction, older_extraction, form_type: str)
                 f"{label} MD&A: only {mda.char_count} chars extracted "
                 f"(minimum {MDA_MIN_CHARS}) — likely a fragment."
             )
-        if form_type == "10-K":
+        if form_type in ("10-K", "20-F"):
             rf_method_val = rf.method.value if hasattr(rf.method, "value") else rf.method
             if not rf.extraction_success:
                 issues.append(
@@ -264,7 +274,7 @@ def _check_extraction_sanity(newer_extraction, older_extraction, form_type: str)
             elif rf.char_count < RISK_FACTORS_MIN_CHARS_10K:
                 issues.append(
                     f"{label} Risk Factors: only {rf.char_count} chars extracted "
-                    f"(minimum {RISK_FACTORS_MIN_CHARS_10K} for 10-K)."
+                    f"(minimum {RISK_FACTORS_MIN_CHARS_10K})."
                 )
     if issues:
         return (
@@ -310,6 +320,7 @@ def _build_output(
             method=s.method.value if hasattr(s.method, "value") else s.method,
             confidence_score=s.confidence_score, char_count=s.char_count,
             failure_reason=s.failure_reason, coverage_gap_note=s.coverage_gap_note,
+            source_reference=getattr(s, "source_reference", None),
         )
 
     def extraction_out(e) -> Optional[ExtractionOut]:
@@ -388,7 +399,7 @@ def _build_output(
         )
 
     return CompareFilingsOutput(
-        schema_version="2.0",
+        schema_version="2.1",
         tool="compare_filings",
         ticker=ticker,
         form_type=form_type,

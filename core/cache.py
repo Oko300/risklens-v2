@@ -19,9 +19,12 @@ from typing import Optional
 # Config
 # ---------------------------------------------------------------------------
 
-CACHE_TTL_DAYS   = int(os.getenv("CACHE_TTL_DAYS", "7"))
+CACHE_TTL_DAYS   = max(3, min(int(os.getenv("CACHE_TTL_DAYS", "7")), 7))
 CACHE_TTL_SECS   = CACHE_TTL_DAYS * 86_400
-CACHE_DB_PATH    = os.getenv("CACHE_DB_PATH", "risklens_cache.db")
+CACHE_DB_PATH    = os.getenv("CACHE_DB_PATH") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "risklens_cache.db"
+)
+CACHE_DB_PATH    = os.path.abspath(CACHE_DB_PATH)
 
 _db_lock = threading.Lock()
 _conn: Optional[sqlite3.Connection] = None
@@ -55,6 +58,7 @@ def _get_conn() -> sqlite3.Connection:
                 ON analysis_cache(expires_at)
             """)
             _conn.commit()
+            print(f"[cache:init] SQLite cache ready at {CACHE_DB_PATH} (TTL={CACHE_TTL_DAYS}d)")
     return _conn
 
 
@@ -74,9 +78,11 @@ def cache_get(cache_key: str) -> Optional[dict]:
                 (cache_key, now)
             ).fetchone()
         if row:
+            print(f"[cache:HIT] {cache_key}")
             return json.loads(row[0])
-    except Exception:
-        pass
+        print(f"[cache:MISS] {cache_key}")
+    except Exception as exc:
+        print(f"[cache:ERROR get] {cache_key} — {exc}")
     return None
 
 
@@ -89,6 +95,7 @@ def cache_set(
     ttl_days:  int = CACHE_TTL_DAYS,
 ) -> None:
     """Store result in cache. Auto-cleans expired entries."""
+    ttl_days = max(3, min(ttl_days, 7))
     try:
         conn     = _get_conn()
         now      = time.time()
@@ -100,10 +107,11 @@ def cache_set(
                 VALUES (?,?,?,?,?,?,?)
             """, (cache_key, json.dumps(result), now, expires, ticker, form_type, tool_name))
             # Clean expired records on every write
-            conn.execute("DELETE FROM analysis_cache WHERE expires_at<=?", (now,))
+            deleted = conn.execute("DELETE FROM analysis_cache WHERE expires_at<=?", (now,)).rowcount
             conn.commit()
-    except Exception:
-        pass
+        print(f"[cache:SAVE] {cache_key} (ttl={ttl_days}d, expired_cleaned={deleted})")
+    except Exception as exc:
+        print(f"[cache:ERROR set] {cache_key} — {exc}")
 
 
 def cache_delete(cache_key: str) -> None:
@@ -134,8 +142,20 @@ def cache_stats() -> dict:
 
 
 def make_cache_key(tool: str, ticker: str, form_type: str, extra: str = "") -> str:
-    """Build a consistent cache key."""
+    """
+    Build a consistent cache key.
+
+    For tools that compare specific filings, pass the newer filing's
+    accession_number (or filing_date as fallback) as `extra` so a new
+    filing dropping doesn't silently return a stale cached result.
+    Example: make_cache_key("compare_filings", "AAPL", "10-K", accession_number)
+    """
     parts = [tool, ticker.upper(), form_type]
     if extra:
         parts.append(extra)
     return ":".join(parts)
+
+
+def log_cache_event(event: str, cache_key: str) -> None:
+    """Lightweight stdout logging so cache hits/misses are visible in Render logs."""
+    print(f"[cache:{event}] {cache_key}")

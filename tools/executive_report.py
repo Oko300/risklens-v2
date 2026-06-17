@@ -21,11 +21,11 @@ from datetime import datetime
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from core.cache      import cache_get, cache_set, make_cache_key
 from core.fetcher    import fetch_two_filings
 from core.extractor  import extract_sections_cached
 from core.delta      import compute_delta
 from core.scorer     import score_sections, MaterialityLevel
+from core.cache      import cache_get, cache_set, make_cache_key
 from schemas         import ExecutiveReportOutput
 
 
@@ -40,10 +40,15 @@ def register_executive_report(mcp: FastMCP) -> None:
         form_type: Literal["10-Q", "10-K"] = "10-K",
     ) -> ExecutiveReportOutput:
         """
-        Generate a professional analyst report for any US public company SEC filing.
+        Turn a 100+ page SEC filing into a one-screen analyst report — instantly shareable.
 
-        This is the best tool to use when you want a complete, readable summary
-        of a company's risk profile and financial narrative — not raw data.
+        This is the tool to reach for when you need to brief someone fast:
+        a partner asking "what's the risk story on this name," a client
+        email before market open, a one-pager for an investment committee.
+        It reads the filing, runs the same delta and materiality scoring
+        as compare_filings, and writes the result up as a clean, formatted
+        report — no SEC jargon, no 40-page PDF, just the verdict and the
+        evidence behind it.
 
         The report includes:
           • One-paragraph executive summary with a plain-English verdict
@@ -59,6 +64,13 @@ def register_executive_report(mcp: FastMCP) -> None:
           - Due diligence reports
           - Client emails
           - Slack / Teams messages
+
+        Built for: analysts who need to brief a desk in minutes, advisors
+        prepping a client update, and anyone who needs to go from "ticker"
+        to "shareable verdict" without reading the filing themselves.
+
+        Cached for 3-7 days — repeat requests for the same ticker/form_type
+        return the same report instantly.
 
         Use compare_filings if you want raw structured data.
         Use analyze_risk_trends if you want a multi-year timeline.
@@ -81,11 +93,11 @@ def register_executive_report(mcp: FastMCP) -> None:
         if form_type not in ("10-Q", "10-K"):
             raise ToolError("form_type must be '10-Q' or '10-K'.")
 
-        _ck = make_cache_key("generate_executive_report", ticker, form_type)
-        _hit = cache_get(_ck)
-        if _hit:
-            from pydantic import TypeAdapter
-            return TypeAdapter(ExecutiveReportOutput).validate_python(_hit)
+        # ── CACHE CHECK — before any EDGAR fetch ────────────────────────────
+        cache_key = make_cache_key("generate_executive_report", ticker, form_type)
+        cached = cache_get(cache_key)
+        if cached:
+            return ExecutiveReportOutput(**cached)
 
         try:
             result = await asyncio.wait_for(
@@ -109,6 +121,14 @@ def register_executive_report(mcp: FastMCP) -> None:
                 failure_reason=f"Unexpected error: {exc}",
                 report=None, filing_date=None, overall_materiality=None,
                 top_signals=[], elapsed_seconds=round(elapsed, 2),
+            )
+
+        # ── CACHE SAVE — only successful results are worth caching ─────────
+        if result.pipeline_success:
+            cache_set(
+                cache_key, result.model_dump(),
+                ticker=ticker, form_type=form_type,
+                tool_name="generate_executive_report",
             )
 
         return result

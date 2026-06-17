@@ -18,13 +18,15 @@ def register_eight_k_events(mcp: FastMCP) -> None:
     @mcp.tool()
     async def analyze_8k_events(ticker: str, n_filings: int = 5) -> EightKOutput:
         """
-        Analyze recent 8-K material event filings for a US public company.
+        Catch material events the moment they're disclosed — before the next 10-Q catches up.
 
-        8-K filings are real-time disclosures companies must file within 4
-        business days of a material event. This tool extracts every numbered
-        Item section (e.g. Item 5.02 executive departures, Item 1.03
-        bankruptcy, Item 2.02 earnings) from the most recent filings and maps
-        each to a risk-materiality tier:
+        10-K and 10-Q filings tell you a company's standing risks, but they
+        can be months stale. 8-K filings are how companies disclose material
+        events in real time — companies must file within 4 business days of
+        a CEO departure, bankruptcy, earnings release, material contract, or
+        auditor change. This tool reads every numbered Item section across
+        the most recent 8-K filings and maps each to a risk-materiality tier
+        so you instantly know how seriously to take it:
 
           CRITICAL — bankruptcy, change of control, auditor change/non-reliance,
                       delisting notice, acceleration of debt obligations
@@ -32,6 +34,11 @@ def register_eight_k_events(mcp: FastMCP) -> None:
                       material contract signings/terminations, impairments
           MODERATE — bylaw amendments, equity sales, Reg FD disclosures
           LOW      — code of ethics updates, exhibit-only filings
+
+        Built for: anyone monitoring a position or watchlist who needs to
+        know "did anything material just happen" without manually checking
+        EDGAR, and risk teams who need an early-warning layer between
+        quarterly filings. Cached for 3-7 days.
 
         Use this tool when you want to know "what just happened" rather than
         the standing risk disclosures in a 10-K/10-Q. Combine with

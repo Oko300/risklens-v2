@@ -70,6 +70,7 @@ ALLOWED_FORM_TYPES  = {
     "DEF 14A",                         # proxy statement
     "4",                                # insider trading (XML)
     "SC 13D", "SC 13G", "13F-HR",         # ownership filings
+    "SC 13D/A", "SC 13G/A", "13F-HR/A",    # ownership filing amendments
 }
 
 _RETRYABLE = (

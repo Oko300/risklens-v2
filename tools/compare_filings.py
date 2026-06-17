@@ -73,16 +73,26 @@ def register_compare_filings(mcp: FastMCP) -> None:
         form_type: Literal["10-Q", "10-K", "20-F"] = "10-Q",
     ) -> CompareFilingsOutput:
         """
-        Compare the two most recent SEC filings for a public company.
+        Spot exactly what changed in a company's risk disclosures — instantly.
 
-        Fetches the two most recent 10-K, 10-Q, or 20-F (foreign private
-        issuer annual report) filings directly from EDGAR, extracts Risk
-        Factors and MD&A (or the 20-F equivalents: Item 3.D and Item 5),
-        runs a sentence-level diff between them, and scores each section
-        for materiality using a tiered financial signal library.
+        Most investors skim the same boilerplate Risk Factors and MD&A
+        sections every quarter and miss the one new sentence that actually
+        matters: a new litigation risk, a removed "going concern" note, a
+        sudden mention of "material weakness." This tool does that reading
+        for you. It pulls the two most recent 10-K, 10-Q, or 20-F filings
+        straight from EDGAR, runs a sentence-level diff between them, and
+        scores the result with a tiered materiality engine — so you see a
+        CRITICAL/HIGH/MODERATE/LOW verdict and the exact sentences that
+        drove it, not a wall of legal text to read yourself.
 
-        Results are cached for 3-7 days — a repeat call for the same
-        ticker/form_type returns instantly instead of re-fetching EDGAR.
+        Built for: equity analysts tracking a coverage list, due-diligence
+        teams screening targets, hedge fund desks watching for early risk
+        signals ahead of earnings, and anyone who needs "what changed"
+        faster than reading the filing.
+
+        Cached for 3-7 days — a repeat call for the same ticker/form_type
+        returns instantly instead of re-fetching EDGAR, so this tool stays
+        fast even under heavy use.
 
         Risk Factors note
         -----------------

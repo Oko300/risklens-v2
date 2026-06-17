@@ -147,11 +147,13 @@ def register_risk_categorizer(mcp: FastMCP) -> None:
         form_type: Literal["10-Q", "10-K", "20-F"] = "10-K",
     ) -> CategorizeRisksOutput:
         """
-        Categorize and summarize all risk factors disclosed in a SEC filing.
+        Know exactly which kinds of risk a company is exposed to — ranked, not buried in legal text.
 
-        Fetches the most recent 10-K, 10-Q, or 20-F for a public company,
-        extracts the Risk Factors section, and classifies every identified
-        risk into one of ten standardized risk domains:
+        A 10-K's Risk Factors section can run 30+ pages of dense, repetitive
+        legal language. This tool reads it once and sorts every disclosed
+        risk into one of ten standardized domains, so you can answer "is
+        this a cybersecurity story or a litigation story?" in seconds
+        instead of skimming pages of boilerplate:
 
           1.  Financial & Liquidity Risk
           2.  Legal & Regulatory Risk
@@ -164,12 +166,16 @@ def register_risk_categorizer(mcp: FastMCP) -> None:
           9.  ESG & Climate Risk
           10. Reputational & Brand Risk
 
-        For each category the tool returns the matched signals, a sentence-level
-        excerpt from the filing, a signal count, and a severity tier (1 = highest).
+        For each category you get the matched signals, a direct excerpt
+        from the filing as evidence, a signal count, and a severity tier
+        (1 = highest). An executive summary ranks categories by density,
+        flags Tier 1 risks, and states the dominant risk theme in plain
+        English — built for screening a watchlist or sector quickly.
 
-        An executive summary is generated that ranks categories by signal density,
-        calls out Tier 1 (critical) risks, and provides a plain-English risk
-        profile. Results are cached for 3-7 days.
+        Built for: sector analysts comparing risk profiles across peers,
+        ESG/compliance teams screening for specific exposure types, and
+        due-diligence workflows that need a structured risk map rather
+        than free text. Cached for 3-7 days.
 
         Use `compare_filings` if you want to see how risks changed between filings.
         Use `analyze_risk_trends` if you want a multi-year risk trajectory.

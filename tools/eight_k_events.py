@@ -6,11 +6,20 @@ intelligence from 8-K filings, mapped to the same risk-materiality
 framework as Risk Factors and MD&A.
 """
 
+import asyncio
+import time
+
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from core.eight_k import analyze_8k_filings
+from core.fetcher import PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
 from schemas import EightKOutput
+
+# Explicit outer timeout so a hang anywhere downstream (cache, EDGAR fetch,
+# parsing) can never block this tool indefinitely — it will always return
+# a clear timeout message instead of leaving the caller waiting forever.
+TOOL_TIMEOUT = int(_FETCHER_PIPELINE_TIMEOUT) + 30
 
 
 def register_eight_k_events(mcp: FastMCP) -> None:
@@ -52,11 +61,34 @@ def register_eight_k_events(mcp: FastMCP) -> None:
             EightKOutput with every detected Item event, its materiality tier,
             an excerpt, and the single highest-risk event found across the window.
         """
+        start = time.monotonic()
         ticker = ticker.upper().strip()
         if not ticker or not ticker.replace("-", "").replace(".", "").isalpha():
             raise ToolError(f"Invalid ticker: {ticker!r}. Use a US stock symbol like AAPL.")
         n_filings = max(1, min(n_filings, 10))
 
-        result = await analyze_8k_filings(ticker, n_filings=n_filings)
+        try:
+            result = await asyncio.wait_for(
+                analyze_8k_filings(ticker, n_filings=n_filings),
+                timeout=TOOL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            elapsed = time.monotonic() - start
+            return EightKOutput(
+                ticker=ticker, pipeline_success=False,
+                failure_reason=f"8-K analysis timed out after {TOOL_TIMEOUT}s. Try again — "
+                                f"large filers can occasionally need a second attempt.",
+                events=[], filing_count=0, highest_risk_event=None,
+                elapsed_seconds=round(elapsed, 2),
+            )
+        except Exception as exc:
+            elapsed = time.monotonic() - start
+            return EightKOutput(
+                ticker=ticker, pipeline_success=False,
+                failure_reason=f"Unexpected error: {exc}",
+                events=[], filing_count=0, highest_risk_event=None,
+                elapsed_seconds=round(elapsed, 2),
+            )
+
         result.pop("from_cache", None)
         return EightKOutput(**result)

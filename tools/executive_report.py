@@ -22,6 +22,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from core.fetcher    import fetch_two_filings
+from core.fetcher     import PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
 from core.extractor  import extract_sections_cached
 from core.delta      import compute_delta
 from core.scorer     import score_sections, MaterialityLevel
@@ -29,7 +30,13 @@ from core.cache      import cache_get, cache_set, make_cache_key
 from schemas         import ExecutiveReportOutput
 
 
-TOOL_TIMEOUT = 90
+# TOOL_TIMEOUT must always exceed the fetcher's own internal PIPELINE_TIMEOUT
+# (core/fetcher.py) plus headroom for extraction/delta/scoring. Previously
+# this was hardcoded to 90s while the fetcher's internal budget was 110s —
+# meaning the tool gave up via asyncio.wait_for BEFORE the fetcher itself
+# would have finished on large filings (e.g. JPM's 10-K), causing a false
+# timeout on every call for big filers regardless of caching.
+TOOL_TIMEOUT = int(_FETCHER_PIPELINE_TIMEOUT) + 30  # processing headroom
 
 
 def register_executive_report(mcp: FastMCP) -> None:

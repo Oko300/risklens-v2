@@ -19,7 +19,7 @@ from typing import Literal, Optional
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from core.fetcher    import fetch_two_filings
+from core.fetcher    import fetch_two_filings, PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
 from core.extractor  import extract_sections_cached
 from core.delta      import compute_delta
 from core.scorer     import score_sections
@@ -37,7 +37,10 @@ from schemas         import (
     SignalHitOut,
 )
 
-TOOL_TIMEOUT = 100
+# TOOL_TIMEOUT must always exceed the fetcher's own internal PIPELINE_TIMEOUT
+# plus headroom for extraction/delta/scoring — see executive_report.py for
+# the full explanation of why this was previously too tight on large filers.
+TOOL_TIMEOUT = int(_FETCHER_PIPELINE_TIMEOUT) + 30
 
 MDA_MIN_CHARS              = 5_000
 RISK_FACTORS_MIN_CHARS_10K = 2_000

@@ -17,7 +17,7 @@ from typing import Literal, Optional
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from core.fetcher   import fetch_n_filings
+from core.fetcher   import fetch_n_filings, PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
 from core.extractor import extract_sections_cached
 from core.scorer    import score_sections
 from core.cache     import cache_get, cache_set, make_cache_key
@@ -29,7 +29,10 @@ from schemas        import (
 )
 
 
-TOOL_TIMEOUT  = 130   # seconds — fetching N filings takes longer
+# TOOL_TIMEOUT must always exceed the fetcher's own internal PIPELINE_TIMEOUT
+# plus headroom — this tool can fetch up to MAX_FILINGS=8 documents
+# concurrently, so it gets the largest margin of the four priority tools.
+TOOL_TIMEOUT  = int(_FETCHER_PIPELINE_TIMEOUT) + 60
 MAX_FILINGS   = 8
 DEFAULT_N     = 4
 

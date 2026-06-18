@@ -16,7 +16,7 @@ from typing import Literal, Optional
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from core.fetcher   import fetch_one_filing
+from core.fetcher   import fetch_one_filing, PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
 from core.extractor import extract_sections_cached
 from core.cache     import cache_get, cache_set, make_cache_key
 from schemas        import (
@@ -27,7 +27,11 @@ from schemas        import (
 )
 
 
-TOOL_TIMEOUT = 80
+# TOOL_TIMEOUT must always exceed the fetcher's own internal PIPELINE_TIMEOUT
+# plus headroom for categorization — see executive_report.py for the full
+# explanation of why a hardcoded shorter value caused false timeouts on
+# large filers regardless of caching.
+TOOL_TIMEOUT = int(_FETCHER_PIPELINE_TIMEOUT) + 20
 
 RISK_TAXONOMY: dict[str, dict] = {
     "financial": {

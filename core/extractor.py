@@ -17,12 +17,18 @@ Key behaviours:
   - Cross-reference guard: "See Item 3" in prose does not stop collection
   - 10-K MD&A start patterns require "management" or "discussion" in heading
   - 10-Q Risk Factors reference pointer detection (incorporated-by-reference)
-  - Redis cache for extracted sections (TTL = 24 h)
   - pattern_min_chars per spec rejects fragments below section threshold
+
+Note: section-level extraction is no longer independently cached here.
+The four priority tools (generate_executive_report, compare_filings,
+analyze_8k_events, categorize_risks) already cache their final structured
+results via Upstash Redis (core/cache.py), checked before any EDGAR fetch
+or extraction occurs — caching the intermediate extraction step too was
+redundant and pulled in a TCP Redis client dependency that isn't needed
+for the REST-based Upstash approach.
 """
 
 import json
-import os
 import re
 import unicodedata
 import warnings
@@ -30,13 +36,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-import redis.asyncio as aioredis
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 MIN_SECTION_CHARS     = 500
-REDIS_TTL_EXTRACTION  = 86_400   # 24 hours
 
 _REFERENCE_POINTER_THRESHOLD = 2_000
 _REFERENCE_POINTER_PHRASES   = [
@@ -93,55 +97,6 @@ class ExtractionResult:
     @property
     def any_succeeded(self) -> bool:
         return self.risk_factors.extraction_success or self.mda.extraction_success
-
-
-# ---------------------------------------------------------------------------
-# Redis client — shared, optional, never fatal
-# ---------------------------------------------------------------------------
-
-_redis_client: Optional[aioredis.Redis] = None
-
-
-async def _get_redis() -> Optional[aioredis.Redis]:
-    global _redis_client
-    if _redis_client is not None:
-        return _redis_client
-    host     = os.getenv("REDIS_HOST")
-    port     = int(os.getenv("REDIS_PORT", "6379"))
-    password = os.getenv("REDIS_PASSWORD")
-    if not host:
-        return None
-    try:
-        _redis_client = aioredis.Redis(
-            host=host, port=port, password=password,
-            decode_responses=True,
-            socket_connect_timeout=3,
-            socket_timeout=3,
-        )
-        await _redis_client.ping()
-    except Exception:
-        _redis_client = None
-    return _redis_client
-
-
-async def _cache_get(key: str) -> Optional[str]:
-    try:
-        r = await _get_redis()
-        if r is None:
-            return None
-        return await r.get(key)
-    except Exception:
-        return None
-
-
-async def _cache_set(key: str, value: str, ttl: int) -> None:
-    try:
-        r = await _get_redis()
-        if r is None:
-            return
-        await r.setex(key, ttl, value)
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -334,26 +289,17 @@ async def extract_sections_cached(
     document_url: str = "",
 ) -> ExtractionResult:
     """
-    Async extract with Redis caching.
-    Cache key: edgar:extraction:{accession}:{form_type}
+    Async wrapper around extract_sections.
+
+    Name kept for backward compatibility with existing tool call sites
+    (compare_filings, risk_trends, risk_categorizer, executive_report all
+    call this as `await extract_sections_cached(...)`). No independent
+    caching happens at this layer anymore — the calling tools already
+    cache their final structured results via Upstash Redis before this
+    function is ever reached, so re-caching the intermediate extraction
+    step here was redundant.
     """
-    cache_key = f"edgar:extraction:{accession}:{form_type}"
-
-    cached = await _cache_get(cache_key)
-    if cached:
-        try:
-            return _result_from_json(cached)
-        except Exception:
-            pass
-
-    result = extract_sections(html, accession, filing_date, form_type, document_url)
-
-    try:
-        await _cache_set(cache_key, _result_to_json(result), REDIS_TTL_EXTRACTION)
-    except Exception:
-        pass
-
-    return result
+    return extract_sections(html, accession, filing_date, form_type, document_url)
 
 
 def extract_sections(

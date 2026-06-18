@@ -479,18 +479,20 @@ async def _get_filing_list(
 
 
 def _extract_filings_from_submissions(data: dict, form_type: str) -> list[dict]:
-    recent       = data.get("filings", {}).get("recent", {})
-    forms        = recent.get("form",          [])
-    accessions   = recent.get("accessionNumber", [])
-    filing_dates = recent.get("filingDate",    [])
-    report_dates = recent.get("reportDate",    [])
-    results      = []
+    recent             = data.get("filings", {}).get("recent", {})
+    forms              = recent.get("form",            [])
+    accessions         = recent.get("accessionNumber",  [])
+    filing_dates       = recent.get("filingDate",      [])
+    report_dates       = recent.get("reportDate",      [])
+    primary_documents  = recent.get("primaryDocument", [])
+    results            = []
     for i, form in enumerate(forms):
         if form == form_type:
             results.append({
-                "accession":   accessions[i].replace("-", ""),
-                "filing_date": filing_dates[i] if i < len(filing_dates) else "",
-                "report_date": report_dates[i] if i < len(report_dates) else "",
+                "accession":        accessions[i].replace("-", ""),
+                "filing_date":      filing_dates[i] if i < len(filing_dates) else "",
+                "report_date":      report_dates[i] if i < len(report_dates) else "",
+                "primary_document": primary_documents[i] if i < len(primary_documents) else "",
             })
     return results
 

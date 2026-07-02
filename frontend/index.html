@@ -186,13 +186,46 @@ body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #ffffff; }
       <button class="tab-btn active" id="loginTab" onclick="switchTab('login')">Sign In</button>
       <button class="tab-btn" id="registerTab" onclick="switchTab('register')">Register</button>
     </div>
-    <div class="form-group">
-      <label>Email</label>
-      <input type="email" id="authEmail" placeholder="you@example.com">
+    <div id="loginFields">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="••••••••">
+        <small style="color:#666;cursor:pointer;float:right;margin-top:4px">Forgot password?</small>
+      </div>
     </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="password" id="authPassword" placeholder="••••••••">
+
+    <div id="registerFields" style="display:none">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="regName" placeholder="John Doe">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="regEmail" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label>Password <small style="color:#666">(min 8 characters)</small></label>
+        <input type="password" id="regPassword" placeholder="••••••••" 
+          oninput="checkPasswordStrength(this.value)">
+        <div id="pwStrength" style="height:3px;border-radius:2px;margin-top:6px;background:#333;transition:all 0.3s">
+          <div id="pwStrengthFill" style="height:100%;border-radius:2px;width:0%;transition:all 0.3s"></div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Confirm Password</label>
+        <input type="password" id="regConfirm" placeholder="••••••••">
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-start;gap:10px;margin-top:4px">
+        <input type="checkbox" id="agreeTerms" style="margin-top:3px;accent-color:#2563eb">
+        <label for="agreeTerms" style="color:#888;font-size:13px;cursor:pointer">
+          I agree to the <a href="#" style="color:#2563eb">Terms of Service</a> and 
+          <a href="#" style="color:#2563eb">Privacy Policy</a>
+        </label>
+      </div>
     </div>
     <button class="btn-submit" onclick="submitAuth()" id="authSubmitBtn">Sign In</button>
     <div class="error-msg" id="authError"></div>
@@ -271,6 +304,8 @@ function switchTab(tab) {
   currentTab = tab;
   document.getElementById('loginTab').classList.toggle('active', tab === 'login');
   document.getElementById('registerTab').classList.toggle('active', tab === 'register');
+  document.getElementById('loginFields').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('registerFields').style.display = tab === 'register' ? 'block' : 'none';
   document.getElementById('authSubmitBtn').textContent = tab === 'login' ? 'Sign In' : 'Create Account';
 }
 
@@ -279,22 +314,58 @@ function selectPlan(plan) {
   openModal('register');
 }
 
+function checkPasswordStrength(val) {
+  const fill = document.getElementById('pwStrengthFill');
+  if (val.length === 0) { fill.style.width = '0%'; return; }
+  if (val.length < 6) { fill.style.width = '33%'; fill.style.background = '#ef4444'; return; }
+  if (val.length < 10) { fill.style.width = '66%'; fill.style.background = '#f59e0b'; return; }
+  fill.style.width = '100%'; fill.style.background = '#22c55e';
+}
+
 async function submitAuth() {
-  const email = document.getElementById('authEmail').value.trim();
-  const password = document.getElementById('authPassword').value.trim();
   const errEl = document.getElementById('authError');
   const sucEl = document.getElementById('authSuccess');
   errEl.style.display = 'none';
   sucEl.style.display = 'none';
+  const btn = document.getElementById('authSubmitBtn');
 
-  if (!email || !password) {
-    errEl.textContent = 'Please enter email and password.';
-    errEl.style.display = 'block';
-    return;
+  let email, password, body, endpoint;
+
+  if (currentTab === 'login') {
+    email = document.getElementById('loginEmail').value.trim();
+    password = document.getElementById('loginPassword').value.trim();
+    if (!email || !password) {
+      errEl.textContent = 'Please enter your email and password.';
+      errEl.style.display = 'block'; return;
+    }
+    endpoint = '/api/auth/login';
+    body = { email, password };
+  } else {
+    const name = document.getElementById('regName').value.trim();
+    email = document.getElementById('regEmail').value.trim();
+    password = document.getElementById('regPassword').value.trim();
+    const confirm = document.getElementById('regConfirm').value.trim();
+    const agreed = document.getElementById('agreeTerms').checked;
+    if (!name || !email || !password || !confirm) {
+      errEl.textContent = 'Please fill in all fields.';
+      errEl.style.display = 'block'; return;
+    }
+    if (password.length < 8) {
+      errEl.textContent = 'Password must be at least 8 characters.';
+      errEl.style.display = 'block'; return;
+    }
+    if (password !== confirm) {
+      errEl.textContent = 'Passwords do not match.';
+      errEl.style.display = 'block'; return;
+    }
+    if (!agreed) {
+      errEl.textContent = 'Please agree to the Terms of Service.';
+      errEl.style.display = 'block'; return;
+    }
+    endpoint = '/api/auth/register';
+    body = { email, password, full_name: name };
   }
 
-  const endpoint = currentTab === 'login' ? '/api/auth/login' : '/api/auth/register';
-  const btn = document.getElementById('authSubmitBtn');
   btn.textContent = 'Please wait...';
   btn.disabled = true;
 
@@ -302,25 +373,23 @@ async function submitAuth() {
     const res = await fetch(API + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
-
     if (!res.ok) {
       errEl.textContent = data.detail || 'Something went wrong.';
       errEl.style.display = 'block';
     } else {
       token = data.access_token;
       localStorage.setItem('rl_token', token);
-      sucEl.textContent = currentTab === 'login' ? 'Signed in!' : 'Account created!';
+      sucEl.textContent = currentTab === 'login' ? 'Welcome back!' : 'Account created successfully!';
       sucEl.style.display = 'block';
-      setTimeout(() => { closeModal(); showDashboard(); }, 800);
+      setTimeout(() => { closeModal(); showDashboard(); }, 900);
     }
-  } catch (e) {
+  } catch(e) {
     errEl.textContent = 'Network error. Please try again.';
     errEl.style.display = 'block';
   }
-
   btn.textContent = currentTab === 'login' ? 'Sign In' : 'Create Account';
   btn.disabled = false;
 }

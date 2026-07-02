@@ -377,7 +377,22 @@ async function submitAuth() {
     });
     const data = await res.json();
     if (!res.ok) {
-      errEl.textContent = data.detail || 'Something went wrong.';
+      function getFriendlyError(detail) {
+        if (!detail) return 'Something went wrong. Please try again.';
+        const d = detail.toLowerCase();
+        if (d.includes('rate limit') || d.includes('email rate')) 
+          return 'Too many attempts. Please wait 1 hour before trying again with this email.';
+        if (d.includes('already registered') || d.includes('already exists') || d.includes('duplicate'))
+          return 'This email is already registered. Please sign in instead.';
+        if (d.includes('invalid email'))
+          return 'Please enter a valid email address.';
+        if (d.includes('password') && d.includes('short'))
+          return 'Password must be at least 8 characters.';
+        if (d.includes('invalid login') || d.includes('invalid credentials'))
+          return 'Incorrect email or password.';
+        return detail;
+      }
+      errEl.textContent = getFriendlyError(data.detail || data.message || data.error);
       errEl.style.display = 'block';
     } else {
       token = data.access_token;

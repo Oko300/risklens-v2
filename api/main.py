@@ -1,7 +1,7 @@
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+import os
 
 from api.routers import auth, conversations, messages, usage
 
@@ -27,14 +27,15 @@ app.include_router(messages.router, prefix="/api/messages")
 app.include_router(usage.router, prefix="/api/usage")
 
 # Health check
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    with open("frontend/index.html", "r") as f:
-        return f.read()
-
-@app.get("/health")
-async def health_check():
+@app.get("/")
+async def root():
+    frontend_path = os.path.join(
+        os.path.dirname(__file__), "../frontend/index.html"
+    )
+    if os.path.exists(frontend_path):
+        return FileResponse(frontend_path)
     return {"status": "ok", "app": "RiskLens"}
 
-# Serve static files (e.g., frontend assets)
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

@@ -238,6 +238,7 @@
         }
 
         .auth-modal {
+            position: relative; /* For positioning the close button */
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 0.75rem;
@@ -245,6 +246,22 @@
             width: 90%;
             max-width: 400px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .close-modal-button {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .close-modal-button:hover {
+            color: var(--text-light);
         }
 
         .auth-modal-tabs {
@@ -681,6 +698,7 @@
 
     <div id="auth-modal-overlay" class="auth-modal-overlay">
         <div class="auth-modal">
+            <button class="close-modal-button" onclick="hideAuthModal()">X</button>
             <div class="auth-modal-tabs">
                 <button id="signInTab" class="active">Sign In</button>
                 <button id="registerTab">Register</button>
@@ -781,14 +799,31 @@
         function showView(viewId) {
             landingPage.classList.add('hidden');
             dashboardPage.classList.add('hidden');
-            authModalOverlay.classList.add('hidden');
+            authModalOverlay.classList.add('hidden'); // Ensure modal is hidden by default
 
             if (viewId === 'landing') {
                 landingPage.classList.remove('hidden');
             } else if (viewId === 'dashboard') {
                 dashboardPage.classList.remove('hidden');
-            } else if (viewId === 'authModal') {
-                authModalOverlay.classList.remove('hidden');
+            }
+        }
+
+        function showAuthModal(initialTab = 'signIn') {
+            authModalOverlay.classList.remove('hidden'); // Show the modal overlay
+            if (initialTab === 'register') {
+                registerTab.click();
+            } else {
+                signInTab.click();
+            }
+        }
+
+        function hideAuthModal() {
+            authModalOverlay.classList.add('hidden');
+            // Determine which view to show after closing modal (e.g., landing page if not logged in)
+            if (getToken()) {
+                showView('dashboard');
+            } else {
+                showView('landing');
             }
         }
 
@@ -924,14 +959,21 @@
 
             authForm.addEventListener('submit', handleAuth);
 
-            document.getElementById('signInNavBtn').addEventListener('click', () => showView('authModal'));
-            document.getElementById('startFreeNavBtn').addEventListener('click', () => {
-                showView('authModal');
-                registerTab.click();
-            });
-            document.getElementById('startFreeHeroBtn').addEventListener('click', () => {
-                showView('authModal');
-                registerTab.click();
+            document.getElementById('signInNavBtn').addEventListener('click', () => showAuthModal('signIn'));
+            document.getElementById('startFreeNavBtn').addEventListener('click', () => showAuthModal('register'));
+            document.getElementById('startFreeHeroBtn').addEventListener('click', () => showAuthModal('register'));
+
+            // Pricing buttons
+            document.querySelectorAll('.select-plan-button').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const plan = event.target.dataset.plan;
+                    if (plan === 'pro' || plan === 'business') {
+                        localStorage.setItem('selectedPlan', plan);
+                    } else {
+                        localStorage.removeItem('selectedPlan');
+                    }
+                    showAuthModal('register');
+                });
             });
         }
 

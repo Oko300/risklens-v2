@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RiskLens - AI-Powered SEC Filing Intelligence</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0a0a;
+            --card-bg: #111111;
+            --border-color: #1f1f1f;
+            --accent-blue: #2563eb;
+            --text-light: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+
+        /* Navbar */
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .navbar .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text-light);
+            text-decoration: none;
+        }
+
+        .navbar .nav-buttons button {
+            background-color: transparent;
+            color: var(--text-light);
+            border: none;
+            padding: 0.75rem 1.5rem;
+            margin-left: 1rem;
+            cursor: pointer;
+            font-size: 1rem;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s ease;
+        }
+
+        .navbar .nav-buttons button:hover {
+            background-color: var(--card-bg);
+        }
+
+        .navbar .nav-buttons .btn-primary {
+            background-color: var(--accent-blue);
+            color: white;
+        }
+
+        .navbar .nav-buttons .btn-primary:hover {
+            background-color: #1d4ed8; /* Darker blue */
+        }
+
+        /* Landing Page */
+        .landing-page {
+            text-align: center;
+            padding: 4rem 1rem;
+            flex-grow: 1;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            background: linear-gradient(90deg, #2563eb, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        .hero .cta-button {
+            background-color: var(--accent-blue);
+            color: white;
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .hero .cta-button:hover {
+            background-color: #1d4ed8;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 4rem;
+        }
+
+        .feature-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 2rem;
+            text-align: left;
+        }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--accent-blue);
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .pricing-section {
+            margin-top: 6rem;
+            padding-bottom: 4rem;
+        }
+
+        .pricing-section h2 {
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: var(--text-light);
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .price-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 2.5rem;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .price-card h3 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            color: var(--text-light);
+        }
+
+        .price-card .price {
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+        }
+
+        .price-card .price span {
+            font-size: 1rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .price-card ul {
+            list-style: none;
+            padding: 0;
+            margin: 1.5rem 0;
+            flex-grow: 1;
+        }
+
+        .price-card ul li {
+            margin-bottom: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+        }
+
+        .price-card ul li::before {
+            content: '✓';
+            color: #22c55e; /* Green checkmark */
+            margin-right: 0.5rem;
+            font-weight: 600;
+        }
+
+        .price-card .select-plan-button {
+            background-color: var(--accent-blue);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s ease;
+        }
+
+        .price-card .select-plan-button:hover {
+            background-color: #1d4ed8;
+        }
+
+        /* Auth Modal */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none; /* Hidden by default */
+        }
+
+        .auth-modal {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 2rem;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .auth-modal-tabs {
+            display: flex;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .auth-modal-tabs button {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background-color: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .auth-modal-tabs button.active {
+            color: var(--accent-blue);
+            border-bottom: 2px solid var(--accent-blue);
+            font-weight: 600;
+        }
+
+        .auth-modal-form label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-light);
+            font-size: 0.9rem;
+        }
+
+        .auth-modal-form input {
+            width: calc(100% - 2rem);
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            color: var(--text-light);
+            font-size: 1rem;
+        }
+
+        .auth-modal-form input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .auth-modal-form .error-message {
+            color: #ef4444; /* Red */
+            font-size: 0.85rem;
+            margin-top: -0.5rem;
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+
+        .auth-modal-form button[type="submit"] {
+            background-color: var(--accent-blue);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s ease;
+        }
+
+        .auth-modal-form button[type="submit"]:hover {
+            background-color: #1d4ed8;
+        }
+
+        /* Dashboard */
+        .dashboard-page {
+            display: flex;
+            flex-grow: 1;
+            display: none; /* Hidden by default */
+        }
+
+        .sidebar {
+            width: 280px;
+            background-color: var(--card-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .sidebar .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text-light);
+            text-decoration: none;
+            margin-bottom: 2rem;
+            display: block;
+        }
+
+        .sidebar .new-analysis-button {
+            background-color: var(--accent-blue);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 1.5rem;
+            transition: background-color 0.2s ease;
+        }
+
+        .sidebar .new-analysis-button:hover {
+            background-color: #1d4ed8;
+        }
+
+        .sidebar .conversations-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 1.5rem;
+        }
+
+        .sidebar .conversations-list h4 {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+
+        .sidebar .conversations-list ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .sidebar .conversations-list li {
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar .conversations-list a {
+            display: block;
+            padding: 0.75rem 1rem;
+            color: var(--text-light);
+            text-decoration: none;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sidebar .conversations-list a:hover,
+        .sidebar .conversations-list a.active {
+            background-color: var(--bg-dark);
+        }
+
+        .sidebar .usage-bar {
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .sidebar .usage-bar p {
+            margin: 0 0 0.5rem 0;
+            color: var(--text-muted);
+        }
+
+        .sidebar .usage-bar .progress-container {
+            background-color: var(--border-color);
+            border-radius: 0.25rem;
+            height: 8px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar .usage-bar .progress-bar {
+            height: 100%;
+            background-color: var(--accent-blue);
+            width: 0%; /* Controlled by JS */
+            border-radius: 0.25rem;
+        }
+
+        .sidebar .usage-bar .plan-badge {
+            display: inline-block;
+            background-color: #22c55e; /* Green */
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .sidebar .upgrade-plan-button {
+            background-color: transparent;
+            color: var(--accent-blue);
+            border: 1px solid var(--accent-blue);
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .sidebar .upgrade-plan-button:hover {
+            background-color: var(--accent-blue);
+            color: white;
+        }
+
+        .chat-area {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-dark);
+        }
+
+        .chat-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--text-light);
+        }
+
+        .messages-container {
+            flex-grow: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .message-bubble {
+            max-width: 70%;
+            padding: 0.8rem 1.2rem;
+            border-radius: 0.75rem;
+            line-height: 1.5;
+            position: relative;
+        }
+
+        .message-bubble.user {
+            background-color: var(--accent-blue);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 0.25rem;
+        }
+
+        .message-bubble.assistant {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            align-self: flex-start;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            border-bottom-left-radius: 0.25rem;
+        }
+
+        .message-bubble.assistant .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--accent-blue);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .message-bubble.assistant .content {
+            flex-grow: 1;
+        }
+
+        .message-bubble .tool-badge {
+            position: absolute;
+            bottom: -10px;
+            right: 10px;
+            background-color: #60a5fa; /* Lighter blue */
+            color: white;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.25rem;
+            display: none; /* Hidden by default, shown when tool_used exists */
+        }
+
+        .message-bubble.assistant .tool-badge {
+            left: 50px; /* Adjust for avatar */
+            right: auto;
+        }
+
+        .chat-input-area {
+            padding: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 1rem;
+            background-color: var(--bg-dark);
+        }
+
+        .chat-input-area input {
+            flex-grow: 1;
+            padding: 0.8rem 1.2rem;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            color: var(--text-light);
+            font-size: 1rem;
+        }
+
+        .chat-input-area input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .chat-input-area input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .chat-input-area button {
+            background-color: var(--accent-blue);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .chat-input-area button:hover {
+            background-color: #1d4ed8;
+        }
+
+        .typing-indicator {
+            align-self: flex-start;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 0.8rem 1.2rem;
+            color: var(--text-muted);
+            font-style: italic;
+            display: none; /* Hidden by default */
+        }
+
+        /* Utility classes */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="landing-page" class="landing-page">
+        <nav class="navbar">
+            <a href="#" class="logo">RiskLens</a>
+            <div class="nav-buttons">
+                <button id="signInNavBtn">Sign In</button>
+                <button id="startFreeNavBtn" class="btn-primary">Start Free</button>
+            </div>
+        </nav>
+        <div class="container">
+            <section class="hero">
+                <h1>AI-Powered SEC Filing Intelligence</h1>
+                <p>Analyze 10-K, 10-Q filings instantly. Catch risk signals before the market does.</p>
+                <button id="startFreeHeroBtn" class="cta-button">Start Free — No Credit Card</button>
+            </section>
+
+            <section class="features-grid">
+                <div class="feature-card">
+                    <h3>Real-Time Risk Scoring</h3>
+                    <p>Our AI scores every filing for material risk, giving you an edge in understanding potential impacts.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Language Drift Detection</h3>
+                    <p>Catch subtle changes in company wording that might signal underlying shifts in strategy or risk.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Instant Alerts</h3>
+                    <p>Receive notifications within minutes of any new filing, ensuring you're always up-to-date.</p>
+                </div>
+            </section>
+
+            <section class="pricing-section">
+                <h2>Simple, Transparent Pricing</h2>
+                <div class="pricing-grid">
+                    <div class="price-card">
+                        <div>
+                            <h3>Free Trial</h3>
+                            <p class="price">$0<span>/month</span></p>
+                            <p class="text-muted">Perfect for getting started</p>
+                            <ul>
+                                <li>10 analyses</li>
+                                <li>Basic reports</li>
+                                <li>Email support</li>
+                            </ul>
+                        </div>
+                        <button class="select-plan-button" data-plan="free_trial">Start Free Trial</button>
+                    </div>
+                    <div class="price-card">
+                        <div>
+                            <h3>Pro</h3>
+                            <p class="price">$29<span>/month</span></p>
+                            <p class="text-muted">For individual analysts</p>
+                            <ul>
+                                <li>500 analyses/month</li>
+                                <li>All tools</li>
+                                <li>Export capabilities</li>
+                                <li>Priority support</li>
+                            </ul>
+                        </div>
+                        <button class="select-plan-button" data-plan="pro">Choose Pro</button>
+                    </div>
+                    <div class="price-card">
+                        <div>
+                            <h3>Business</h3>
+                            <p class="price">$99<span>/month</span></p>
+                            <p class="text-muted">For teams and enterprises</p>
+                            <ul>
+                                <li>Unlimited analyses</li>
+                                <li>API access</li>
+                                <li>Team seats</li>
+                                <li>Dedicated account manager</li>
+                            </ul>
+                        </div>
+                        <button class="select-plan-button" data-plan="business">Choose Business</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="auth-modal-overlay" class="auth-modal-overlay">
+        <div class="auth-modal">
+            <div class="auth-modal-tabs">
+                <button id="signInTab" class="active">Sign In</button>
+                <button id="registerTab">Register</button>
+            </div>
+            <form id="auth-form" class="auth-modal-form">
+                <div id="signInFields">
+                    <label for="signInEmail">Email</label>
+                    <input type="email" id="signInEmail" placeholder="your@example.com" required>
+                    <label for="signInPassword">Password</label>
+                    <input type="password" id="signInPassword" placeholder="••••••••" required>
+                </div>
+                <div id="registerFields" class="hidden">
+                    <label for="registerEmail">Email</label>
+                    <input type="email" id="registerEmail" placeholder="your@example.com" required>
+                    <label for="registerPassword">Password</label>
+                    <input type="password" id="registerPassword" placeholder="••••••••" required>
+                </div>
+                <p id="authErrorMessage" class="error-message hidden"></p>
+                <button type="submit">Submit</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="dashboard-page" class="dashboard-page">
+        <aside class="sidebar">
+            <div>
+                <a href="#" class="logo">RiskLens</a>
+                <button id="newAnalysisBtn" class="new-analysis-button">New Analysis</button>
+                <div class="conversations-list">
+                    <h4>Conversations</h4>
+                    <ul id="conversationsList">
+                        <!-- Conversations will be loaded here by JS -->
+                    </ul>
+                </div>
+            </div>
+            <div>
+                <div class="usage-bar">
+                    <p>Analyses Used: <span id="analysesUsed">0</span>/<span id="analysesLimit">0</span></p>
+                    <div class="progress-container">
+                        <div id="usageProgressBar" class="progress-bar"></div>
+                    </div>
+                    <p>Plan: <span id="planBadge" class="plan-badge">Free Trial</span></p>
+                    <p><span id="daysRemaining">0</span> days remaining</p>
+                </div>
+                <button id="upgradePlanBtn" class="upgrade-plan-button">Upgrade Plan</button>
+                <button id="logoutBtn" class="upgrade-plan-button" style="margin-top: 10px;">Logout</button>
+            </div>
+        </aside>
+        <main class="chat-area">
+            <div id="chatHeader" class="chat-header">Select a conversation or start a new one</div>
+            <div id="messagesContainer" class="messages-container">
+                <!-- Messages will be loaded here by JS -->
+            </div>
+            <div class="typing-indicator" id="typingIndicator">RiskLens AI is typing...</div>
+            <div class="chat-input-area">
+                <input type="text" id="messageInput" placeholder="Ask about any company — try: 'Generate executive report for AAPL'">
+                <button id="sendMessageBtn">Send</button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const API_BASE_URL = "/api"; // Or your deployed API URL
+
+        // DOM Elements
+        const landingPage = document.getElementById('landing-page');
+        const dashboardPage = document.getElementById('dashboard-page');
+        const authModalOverlay = document.getElementById('auth-modal-overlay');
+        const signInTab = document.getElementById('signInTab');
+        const registerTab = document.getElementById('registerTab');
+        const signInFields = document.getElementById('signInFields');
+        const registerFields = document.getElementById('registerFields');
+        const authForm = document.getElementById('auth-form');
+        const authErrorMessage = document.getElementById('authErrorMessage');
+        const signInEmailInput = document.getElementById('signInEmail');
+        const signInPasswordInput = document.getElementById('signInPassword');
+        const registerEmailInput = document.getElementById('registerEmail');
+        const registerPasswordInput = document.getElementById('registerPassword');
+
+        const newAnalysisBtn = document.getElementById('newAnalysisBtn');
+        const conversationsList = document.getElementById('conversationsList');
+        const chatHeader = document.getElementById('chatHeader');
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendMessageBtn = document.getElementById('sendMessageBtn');
+        const typingIndicator = document.getElementById('typingIndicator');
+        const analysesUsedSpan = document.getElementById('analysesUsed');
+        const analysesLimitSpan = document.getElementById('analysesLimit');
+        const usageProgressBar = document.getElementById('usageProgressBar');
+        const planBadge = document.getElementById('planBadge');
+        const daysRemainingSpan = document.getElementById('daysRemaining');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        let currentConversationId = null;
+        let currentConversationTitle = "New Conversation";
+
+        // --- Utility Functions ---
+        function showView(viewId) {
+            landingPage.classList.add('hidden');
+            dashboardPage.classList.add('hidden');
+            authModalOverlay.classList.add('hidden');
+
+            if (viewId === 'landing') {
+                landingPage.classList.remove('hidden');
+            } else if (viewId === 'dashboard') {
+                dashboardPage.classList.remove('hidden');
+            } else if (viewId === 'authModal') {
+                authModalOverlay.classList.remove('hidden');
+            }
+        }
+
+        function getToken() {
+            return localStorage.getItem('risklens_jwt');
+        }
+
+        function setToken(token) {
+            localStorage.setItem('risklens_jwt', token);
+        }
+
+        function clearToken() {
+            localStorage.removeItem('risklens_jwt');
+        }
+
+        async function apiCall(method, path, body = null, authRequired = true) {
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            if (authRequired) {
+                const token = getToken();
+                if (!token) {
+                    console.error("Authentication required, but no token found.");
+                    showView('landing');
+                    return null;
+                }
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const config = {
+                method: method,
+                headers: headers,
+            };
+            if (body) {
+                config.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}${path}`, config);
+                if (response.status === 401) {
+                    console.warn("Unauthorized access, redirecting to login.");
+                    clearToken();
+                    showView('landing');
+                    return null;
+                }
+                const data = await response.json();
+                if (!response.ok) {
+                    console.error(`API Error (${response.status}):`, data.detail || data.message);
+                    throw new Error(data.detail || data.message || "API call failed");
+                }
+                return data;
+            } catch (error) {
+                console.error("Network or API error:", error);
+                throw error;
+            }
+        }
+
+        function displayMessage(message) {
+            const messageBubble = document.createElement('div');
+            messageBubble.classList.add('message-bubble');
+            messageBubble.classList.add(message.role);
+
+            if (message.role === 'assistant') {
+                messageBubble.innerHTML = `
+                    <div class="avatar">AI</div>
+                    <div class="content">${message.content}</div>
+                    ${message.tool_used ? `<span class="tool-badge">${message.tool_used.replace('_', ' ')}</span>` : ''}
+                `;
+            } else {
+                messageBubble.textContent = message.content;
+            }
+            messagesContainer.appendChild(messageBubble);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            typingIndicator.classList.remove('hidden');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            typingIndicator.classList.add('hidden');
+        }
+
+        // --- Auth Functions ---
+        async function handleAuth(event) {
+            event.preventDefault();
+            authErrorMessage.classList.add('hidden');
+            authErrorMessage.textContent = '';
+
+            const isRegister = registerTab.classList.contains('active');
+            const email = isRegister ? registerEmailInput.value : signInEmailInput.value;
+            const password = isRegister ? registerPasswordInput.value : signInPasswordInput.value;
+
+            try {
+                if (isRegister) {
+                    await apiCall('POST', '/auth/register', { email, password }, false);
+                    alert("Registration successful! Please check your email to verify your account.");
+                    signInTab.click(); // Switch to sign in tab
+                } else {
+                    const data = await apiCall('POST', '/auth/login', { email, password }, false);
+                    if (data && data.access_token) {
+                        setToken(data.access_token);
+                        showView('dashboard');
+                        loadDashboardData();
+                    } else {
+                        throw new Error("Login failed: No access token received.");
+                    }
+                }
+            } catch (error) {
+                authErrorMessage.textContent = error.message || "An unexpected error occurred.";
+                authErrorMessage.classList.remove('hidden');
+                console.error("Auth error:", error);
+            }
+        }
+
+        function setupAuthModal() {
+            signInTab.addEventListener('click', () => {
+                signInTab.classList.add('active');
+                registerTab.classList.remove('active');
+                signInFields.classList.remove('hidden');
+                registerFields.classList.add('hidden');
+                authErrorMessage.classList.add('hidden');
+            });
+
+            registerTab.addEventListener('click', () => {
+                registerTab.classList.add('active');
+                signInTab.classList.remove('active');
+                registerFields.classList.remove('hidden');
+                signInFields.classList.add('hidden');
+                authErrorMessage.classList.add('hidden');
+            });
+
+            authForm.addEventListener('submit', handleAuth);
+
+            document.getElementById('signInNavBtn').addEventListener('click', () => showView('authModal'));
+            document.getElementById('startFreeNavBtn').addEventListener('click', () => {
+                showView('authModal');
+                registerTab.click();
+            });
+            document.getElementById('startFreeHeroBtn').addEventListener('click', () => {
+                showView('authModal');
+                registerTab.click();
+            });
+        }
+
+        // --- Dashboard Functions ---
+        async function loadConversations() {
+            try {
+                const conversations = await apiCall('GET', '/conversations');
+                conversationsList.innerHTML = '';
+                if (conversations && conversations.length > 0) {
+                    conversations.forEach(conv => {
+                        const li = document.createElement('li');
+                        const a = document.createElement('a');
+                        a.href = "#";
+                        a.textContent = conv.title;
+                        a.dataset.conversationId = conv.id;
+                        a.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            loadConversation(conv.id, conv.title);
+                            // Remove active from all, add to current
+                            document.querySelectorAll('#conversationsList a').forEach(item => item.classList.remove('active'));
+                            a.classList.add('active');
+                        });
+                        li.appendChild(a);
+                        conversationsList.appendChild(li);
+                    });
+                } else {
+                    conversationsList.innerHTML = '<li><p style="color: var(--text-muted); padding: 0.75rem 1rem;">No conversations yet.</p></li>';
+                }
+            } catch (error) {
+                console.error("Failed to load conversations:", error);
+                // Optionally display an error message to the user
+            }
+        }
+
+        async function loadConversation(conversationId, title) {
+            currentConversationId = conversationId;
+            currentConversationTitle = title;
+            chatHeader.textContent = title;
+            messagesContainer.innerHTML = ''; // Clear existing messages
+
+            try {
+                const messages = await apiCall('GET', `/messages/${conversationId}`);
+                if (messages && messages.length > 0) {
+                    messages.forEach(displayMessage);
+                } else {
+                    messagesContainer.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Start chatting!</p>';
+                }
+            } catch (error) {
+                console.error("Failed to load messages:", error);
+                messagesContainer.innerHTML = `<p style="text-align: center; color: #ef4444;">Error loading messages: ${error.message}</p>`;
+            }
+        }
+
+        async function sendMessage() {
+            const content = messageInput.value.trim();
+            if (!content) return;
+
+            messageInput.value = '';
+            displayMessage({ role: 'user', content: content });
+            showTypingIndicator();
+
+            try {
+                let conversationIdToSend = currentConversationId;
+                if (!conversationIdToSend) {
+                    // Create new conversation if it's the first message
+                    const newConv = await apiCall('POST', '/conversations', { title: content.substring(0, 50) + "..." });
+                    conversationIdToSend = newConv.id;
+                    currentConversationId = newConv.id;
+                    currentConversationTitle = newConv.title;
+                    chatHeader.textContent = newConv.title;
+                    await loadConversations(); // Reload sidebar to show new conversation
+                    // Select the new conversation in the sidebar
+                    document.querySelectorAll('#conversationsList a').forEach(item => item.classList.remove('active'));
+                    const newConvLink = document.querySelector(`[data-conversation-id="${newConv.id}"]`);
+                    if (newConvLink) newConvLink.classList.add('active');
+                }
+
+                const aiMessage = await apiCall('POST', '/messages', {
+                    conversation_id: conversationIdToSend,
+                    content: content
+                });
+                displayMessage(aiMessage);
+                await loadUsage(); // Usage might have incremented
+            } catch (error) {
+                console.error("Failed to send message:", error);
+                displayMessage({ role: 'assistant', content: `Error: ${error.message}` });
+            } finally {
+                hideTypingIndicator();
+            }
+        }
+
+        async function loadUsage() {
+            try {
+                const usage = await apiCall('GET', '/usage/me');
+                if (usage) {
+                    analysesUsedSpan.textContent = usage.analyses_used;
+                    analysesLimitSpan.textContent = usage.limit === -1 ? 'Unlimited' : usage.limit;
+                    planBadge.textContent = usage.plan.replace('_', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+                    daysRemainingSpan.textContent = usage.days_remaining;
+
+                    const progress = usage.limit === -1 ? 100 : (usage.analyses_used / usage.limit) * 100;
+                    usageProgressBar.style.width = `${Math.min(100, progress)}%`;
+                }
+            } catch (error) {
+                console.error("Failed to load usage:", error);
+            }
+        }
+
+        async function loadDashboardData() {
+            await loadConversations();
+            await loadUsage();
+            // Optionally load the most recent conversation if available
+            const firstConversationLink = conversationsList.querySelector('a');
+            if (firstConversationLink) {
+                firstConversationLink.click();
+            }
+        }
+
+        function handleLogout() {
+            clearToken();
+            showView('landing');
+            currentConversationId = null;
+            currentConversationTitle = "New Conversation";
+            messagesContainer.innerHTML = '';
+            chatHeader.textContent = "Select a conversation or start a new one";
+        }
+
+        // --- Event Listeners ---
+        sendMessageBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        newAnalysisBtn.addEventListener('click', () => {
+            currentConversationId = null;
+            currentConversationTitle = "New Conversation";
+            chatHeader.textContent = "New Conversation";
+            messagesContainer.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Start chatting!</p>';
+            document.querySelectorAll('#conversationsList a').forEach(item => item.classList.remove('active'));
+        });
+        logoutBtn.addEventListener('click', handleLogout);
+
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            setupAuthModal();
+            if (getToken()) {
+                showView('dashboard');
+                loadDashboardData();
+            } else {
+                showView('landing');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,1133 +1,464 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RiskLens - AI-Powered SEC Filing Intelligence</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-dark: #0a0a0a;
-            --card-bg: #111111;
-            --border-color: #1f1f1f;
-            --accent-blue: #2563eb;
-            --text-light: #e0e0e0;
-            --text-muted: #a0a0a0;
-            --font-family: 'Inter', sans-serif;
-        }
-
-        body {
-            font-family: var(--font-family);
-            background-color: var(--bg-dark);
-            color: var(--text-light);
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 1rem;
-        }
-
-        /* Navbar */
-        .navbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem 2rem;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .navbar .logo {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--text-light);
-            text-decoration: none;
-        }
-
-        .navbar .nav-buttons button {
-            background-color: transparent;
-            color: var(--text-light);
-            border: none;
-            padding: 0.75rem 1.5rem;
-            margin-left: 1rem;
-            cursor: pointer;
-            font-size: 1rem;
-            border-radius: 0.375rem;
-            transition: background-color 0.2s ease;
-        }
-
-        .navbar .nav-buttons button:hover {
-            background-color: var(--card-bg);
-        }
-
-        .navbar .nav-buttons .btn-primary {
-            background-color: var(--accent-blue);
-            color: white;
-        }
-
-        .navbar .nav-buttons .btn-primary:hover {
-            background-color: #1d4ed8; /* Darker blue */
-        }
-
-        /* Landing Page */
-        .landing-page {
-            text-align: center;
-            padding: 4rem 1rem;
-            flex-grow: 1;
-        }
-
-        .hero h1 {
-            font-size: 3.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            background: linear-gradient(90deg, #2563eb, #60a5fa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .hero p {
-            font-size: 1.5rem;
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-        }
-
-        .hero .cta-button {
-            background-color: var(--accent-blue);
-            color: white;
-            padding: 1rem 2rem;
-            font-size: 1.2rem;
-            border: none;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-
-        .hero .cta-button:hover {
-            background-color: #1d4ed8;
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-top: 4rem;
-        }
-
-        .feature-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem;
-            padding: 2rem;
-            text-align: left;
-        }
-
-        .feature-card h3 {
-            font-size: 1.5rem;
-            margin-bottom: 0.75rem;
-            color: var(--accent-blue);
-        }
-
-        .feature-card p {
-            color: var(--text-muted);
-            line-height: 1.6;
-        }
-
-        .pricing-section {
-            margin-top: 6rem;
-            padding-bottom: 4rem;
-        }
-
-        .pricing-section h2 {
-            font-size: 2.5rem;
-            margin-bottom: 3rem;
-            color: var(--text-light);
-        }
-
-        .pricing-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-        }
-
-        .price-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem;
-            padding: 2.5rem;
-            text-align: left;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
-
-        .price-card h3 {
-            font-size: 1.8rem;
-            margin-bottom: 1rem;
-            color: var(--text-light);
-        }
-
-        .price-card .price {
-            font-size: 2.5rem;
-            font-weight: 600;
-            color: var(--accent-blue);
-            margin-bottom: 1rem;
-        }
-
-        .price-card .price span {
-            font-size: 1rem;
-            color: var(--text-muted);
-            font-weight: 400;
-        }
-
-        .price-card ul {
-            list-style: none;
-            padding: 0;
-            margin: 1.5rem 0;
-            flex-grow: 1;
-        }
-
-        .price-card ul li {
-            margin-bottom: 0.75rem;
-            color: var(--text-muted);
-            display: flex;
-            align-items: center;
-        }
-
-        .price-card ul li::before {
-            content: '✓';
-            color: #22c55e; /* Green checkmark */
-            margin-right: 0.5rem;
-            font-weight: 600;
-        }
-
-        .price-card .select-plan-button {
-            background-color: var(--accent-blue);
-            color: white;
-            padding: 0.8rem 1.5rem;
-            font-size: 1rem;
-            border: none;
-            border-radius: 0.375rem;
-            cursor: pointer;
-            width: 100%;
-            transition: background-color 0.2s ease;
-        }
-
-        .price-card .select-plan-button:hover {
-            background-color: #1d4ed8;
-        }
-
-        /* Auth Modal */
-        .auth-modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            display: none; /* Hidden by default */
-        }
-
-        .auth-modal {
-            position: relative; /* For positioning the close button */
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem;
-            padding: 2rem;
-            width: 90%;
-            max-width: 400px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        }
-
-        .close-modal-button {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: var(--text-muted);
-            cursor: pointer;
-            transition: color 0.2s ease;
-        }
-
-        .close-modal-button:hover {
-            color: var(--text-light);
-        }
-
-        .auth-modal-tabs {
-            display: flex;
-            margin-bottom: 1.5rem;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .auth-modal-tabs button {
-            flex: 1;
-            padding: 0.75rem 1rem;
-            background-color: transparent;
-            border: none;
-            color: var(--text-muted);
-            font-size: 1.1rem;
-            cursor: pointer;
-            transition: color 0.2s ease;
-        }
-
-        .auth-modal-tabs button.active {
-            color: var(--accent-blue);
-            border-bottom: 2px solid var(--accent-blue);
-            font-weight: 600;
-        }
-
-        .auth-modal-form label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: var(--text-light);
-            font-size: 0.9rem;
-        }
-
-        .auth-modal-form input {
-            width: calc(100% - 2rem);
-            padding: 0.75rem 1rem;
-            margin-bottom: 1rem;
-            background-color: var(--bg-dark);
-            border: 1px solid var(--border-color);
-            border-radius: 0.375rem;
-            color: var(--text-light);
-            font-size: 1rem;
-        }
-
-        .auth-modal-form input:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-        }
-
-        .auth-modal-form .error-message {
-            color: #ef4444; /* Red */
-            font-size: 0.85rem;
-            margin-top: -0.5rem;
-            margin-bottom: 1rem;
-            text-align: left;
-        }
-
-        .auth-modal-form button[type="submit"] {
-            background-color: var(--accent-blue);
-            color: white;
-            padding: 0.8rem 1.5rem;
-            font-size: 1rem;
-            border: none;
-            border-radius: 0.375rem;
-            cursor: pointer;
-            width: 100%;
-            transition: background-color 0.2s ease;
-        }
-
-        .auth-modal-form button[type="submit"]:hover {
-            background-color: #1d4ed8;
-        }
-
-        /* Dashboard */
-        .dashboard-page {
-            display: flex;
-            flex-grow: 1;
-            display: none; /* Hidden by default */
-        }
-
-        .sidebar {
-            width: 280px;
-            background-color: var(--card-bg);
-            border-right: 1px solid var(--border-color);
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
-
-        .sidebar .logo {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--text-light);
-            text-decoration: none;
-            margin-bottom: 2rem;
-            display: block;
-        }
-
-        .sidebar .new-analysis-button {
-            background-color: var(--accent-blue);
-            color: white;
-            padding: 0.8rem 1.5rem;
-            font-size: 1rem;
-            border: none;
-            border-radius: 0.375rem;
-            cursor: pointer;
-            width: 100%;
-            margin-bottom: 1.5rem;
-            transition: background-color 0.2s ease;
-        }
-
-        .sidebar .new-analysis-button:hover {
-            background-color: #1d4ed8;
-        }
-
-        .sidebar .conversations-list {
-            flex-grow: 1;
-            overflow-y: auto;
-            margin-bottom: 1.5rem;
-        }
-
-        .sidebar .conversations-list h4 {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            margin-bottom: 1rem;
-        }
-
-        .sidebar .conversations-list ul {
-            list-style: none;
-            padding: 0;
-        }
-
-        .sidebar .conversations-list li {
-            margin-bottom: 0.5rem;
-        }
-
-        .sidebar .conversations-list a {
-            display: block;
-            padding: 0.75rem 1rem;
-            color: var(--text-light);
-            text-decoration: none;
-            border-radius: 0.375rem;
-            transition: background-color 0.2s ease;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .sidebar .conversations-list a:hover,
-        .sidebar .conversations-list a.active {
-            background-color: var(--bg-dark);
-        }
-
-        .sidebar .usage-bar {
-            background-color: var(--bg-dark);
-            border: 1px solid var(--border-color);
-            border-radius: 0.375rem;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-
-        .sidebar .usage-bar p {
-            margin: 0 0 0.5rem 0;
-            color: var(--text-muted);
-        }
-
-        .sidebar .usage-bar .progress-container {
-            background-color: var(--border-color);
-            border-radius: 0.25rem;
-            height: 8px;
-            overflow: hidden;
-            margin-bottom: 0.5rem;
-        }
-
-        .sidebar .usage-bar .progress-bar {
-            height: 100%;
-            background-color: var(--accent-blue);
-            width: 0%; /* Controlled by JS */
-            border-radius: 0.25rem;
-        }
-
-        .sidebar .usage-bar .plan-badge {
-            display: inline-block;
-            background-color: #22c55e; /* Green */
-            color: white;
-            padding: 0.2rem 0.6rem;
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-
-        .sidebar .upgrade-plan-button {
-            background-color: transparent;
-            color: var(--accent-blue);
-            border: 1px solid var(--accent-blue);
-            padding: 0.75rem 1.5rem;
-            font-size: 1rem;
-            border-radius: 0.375rem;
-            cursor: pointer;
-            width: 100%;
-            transition: background-color 0.2s ease, color 0.2s ease;
-        }
-
-        .sidebar .upgrade-plan-button:hover {
-            background-color: var(--accent-blue);
-            color: white;
-        }
-
-        .chat-area {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            background-color: var(--bg-dark);
-        }
-
-        .chat-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--border-color);
-            text-align: center;
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: var(--text-light);
-        }
-
-        .messages-container {
-            flex-grow: 1;
-            padding: 1.5rem;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .message-bubble {
-            max-width: 70%;
-            padding: 0.8rem 1.2rem;
-            border-radius: 0.75rem;
-            line-height: 1.5;
-            position: relative;
-        }
-
-        .message-bubble.user {
-            background-color: var(--accent-blue);
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 0.25rem;
-        }
-
-        .message-bubble.assistant {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            align-self: flex-start;
-            display: flex;
-            align-items: flex-start;
-            gap: 0.75rem;
-            border-bottom-left-radius: 0.25rem;
-        }
-
-        .message-bubble.assistant .avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background-color: var(--accent-blue);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: 600;
-            font-size: 0.9rem;
-            color: white;
-            flex-shrink: 0;
-        }
-
-        .message-bubble.assistant .content {
-            flex-grow: 1;
-        }
-
-        .message-bubble .tool-badge {
-            position: absolute;
-            bottom: -10px;
-            right: 10px;
-            background-color: #60a5fa; /* Lighter blue */
-            color: white;
-            font-size: 0.7rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 0.25rem;
-            display: none; /* Hidden by default, shown when tool_used exists */
-        }
-
-        .message-bubble.assistant .tool-badge {
-            left: 50px; /* Adjust for avatar */
-            right: auto;
-        }
-
-        .chat-input-area {
-            padding: 1.5rem;
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            gap: 1rem;
-            background-color: var(--bg-dark);
-        }
-
-        .chat-input-area input {
-            flex-grow: 1;
-            padding: 0.8rem 1.2rem;
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 0.5rem;
-            color: var(--text-light);
-            font-size: 1rem;
-        }
-
-        .chat-input-area input::placeholder {
-            color: var(--text-muted);
-        }
-
-        .chat-input-area input:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-        }
-
-        .chat-input-area button {
-            background-color: var(--accent-blue);
-            color: white;
-            padding: 0.8rem 1.5rem;
-            font-size: 1rem;
-            border: none;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-
-        .chat-input-area button:hover {
-            background-color: #1d4ed8;
-        }
-
-        .typing-indicator {
-            align-self: flex-start;
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem;
-            padding: 0.8rem 1.2rem;
-            color: var(--text-muted);
-            font-style: italic;
-            display: none; /* Hidden by default */
-        }
-
-        /* Utility classes */
-        .hidden {
-            display: none !important;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RiskLens - AI-Powered SEC Filing Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #ffffff; }
+
+/* NAVBAR */
+.navbar { display: flex; justify-content: space-between; align-items: center; padding: 20px 60px; border-bottom: 1px solid #1f1f1f; }
+.logo { font-size: 22px; font-weight: 700; color: #fff; }
+.nav-buttons { display: flex; gap: 12px; }
+.btn-ghost { background: transparent; border: 1px solid #333; color: #fff; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.btn-primary { background: #2563eb; border: none; color: #fff; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-ghost:hover { border-color: #555; }
+
+/* HERO */
+.hero { text-align: center; padding: 100px 20px 60px; }
+.hero h1 { font-size: 56px; font-weight: 700; color: #2563eb; margin-bottom: 20px; line-height: 1.1; }
+.hero p { font-size: 20px; color: #888; margin-bottom: 40px; }
+.btn-hero { background: #2563eb; border: none; color: #fff; padding: 16px 40px; border-radius: 10px; cursor: pointer; font-size: 18px; font-weight: 600; }
+.btn-hero:hover { background: #1d4ed8; }
+
+/* FEATURES */
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding: 60px; }
+.feature-card { background: #111; border: 1px solid #1f1f1f; border-radius: 12px; padding: 32px; }
+.feature-card h3 { color: #2563eb; font-size: 18px; margin-bottom: 12px; }
+.feature-card p { color: #888; line-height: 1.6; }
+
+/* PRICING */
+.pricing-section { padding: 60px; text-align: center; }
+.pricing-section h2 { font-size: 36px; margin-bottom: 40px; }
+.pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.pricing-card { background: #111; border: 1px solid #1f1f1f; border-radius: 12px; padding: 40px 32px; text-align: left; }
+.pricing-card h3 { font-size: 22px; margin-bottom: 16px; }
+.price { font-size: 48px; font-weight: 700; color: #2563eb; }
+.price span { font-size: 16px; color: #888; }
+.pricing-card p { color: #888; margin: 12px 0 20px; }
+.pricing-card ul { list-style: none; margin-bottom: 32px; }
+.pricing-card ul li { color: #ccc; padding: 6px 0; }
+.pricing-card ul li::before { content: "✓ "; color: #2563eb; }
+.btn-plan { width: 100%; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; border: none; background: #2563eb; color: #fff; }
+.btn-plan:hover { background: #1d4ed8; }
+
+/* AUTH MODAL */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+.modal-overlay.active { display: flex; }
+.modal { background: #111; border: 1px solid #1f1f1f; border-radius: 16px; padding: 40px; width: 420px; position: relative; }
+.modal-close { position: absolute; top: 16px; right: 20px; background: none; border: none; color: #888; font-size: 24px; cursor: pointer; }
+.modal h2 { font-size: 24px; margin-bottom: 24px; }
+.tab-switcher { display: flex; gap: 0; margin-bottom: 24px; border: 1px solid #333; border-radius: 8px; overflow: hidden; }
+.tab-btn { flex: 1; padding: 10px; background: transparent; border: none; color: #888; cursor: pointer; font-size: 14px; }
+.tab-btn.active { background: #2563eb; color: #fff; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; color: #888; font-size: 14px; margin-bottom: 6px; }
+.form-group input { width: 100%; padding: 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
+.form-group input:focus { border-color: #2563eb; }
+.btn-submit { width: 100%; padding: 14px; background: #2563eb; border: none; color: #fff; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+.btn-submit:hover { background: #1d4ed8; }
+.error-msg { color: #ef4444; font-size: 13px; margin-top: 12px; display: none; }
+.success-msg { color: #22c55e; font-size: 13px; margin-top: 12px; display: none; }
+
+/* DASHBOARD */
+.dashboard { display: none; height: 100vh; flex-direction: row; }
+.sidebar { width: 280px; background: #111; border-right: 1px solid #1f1f1f; display: flex; flex-direction: column; padding: 24px; }
+.sidebar-logo { font-size: 20px; font-weight: 700; margin-bottom: 24px; }
+.btn-new-chat { width: 100%; padding: 12px; background: #2563eb; border: none; color: #fff; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 24px; }
+.conv-list { flex: 1; overflow-y: auto; }
+.conv-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; color: #888; font-size: 14px; margin-bottom: 4px; }
+.conv-item:hover { background: #1a1a1a; color: #fff; }
+.conv-item.active { background: #1a1a1a; color: #fff; }
+.sidebar-footer { margin-top: auto; }
+.usage-bar-wrap { margin-bottom: 16px; }
+.usage-label { font-size: 12px; color: #888; margin-bottom: 6px; }
+.usage-bar { height: 4px; background: #333; border-radius: 4px; }
+.usage-fill { height: 100%; background: #2563eb; border-radius: 4px; }
+.plan-badge { display: inline-block; background: #1a1a1a; border: 1px solid #333; color: #888; font-size: 11px; padding: 3px 8px; border-radius: 4px; margin-bottom: 12px; }
+.btn-upgrade { width: 100%; padding: 10px; background: transparent; border: 1px solid #2563eb; color: #2563eb; border-radius: 8px; cursor: pointer; font-size: 13px; margin-bottom: 12px; }
+.btn-logout { width: 100%; padding: 10px; background: transparent; border: 1px solid #333; color: #888; border-radius: 8px; cursor: pointer; font-size: 13px; }
+
+/* CHAT */
+.chat-area { flex: 1; display: flex; flex-direction: column; }
+.chat-header { padding: 20px 24px; border-bottom: 1px solid #1f1f1f; font-weight: 600; }
+.messages-area { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.message { max-width: 80%; }
+.message.user { align-self: flex-end; }
+.message.assistant { align-self: flex-start; }
+.message-bubble { padding: 14px 18px; border-radius: 12px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; }
+.message.user .message-bubble { background: #2563eb; color: #fff; }
+.message.assistant .message-bubble { background: #111; border: 1px solid #1f1f1f; color: #ccc; }
+.tool-badge { font-size: 11px; color: #888; margin-top: 4px; }
+.typing { color: #888; font-size: 14px; font-style: italic; }
+.chat-input-area { padding: 20px 24px; border-top: 1px solid #1f1f1f; display: flex; gap: 12px; }
+.chat-input { flex: 1; padding: 14px 18px; background: #111; border: 1px solid #333; border-radius: 10px; color: #fff; font-size: 14px; outline: none; }
+.chat-input:focus { border-color: #2563eb; }
+.btn-send { padding: 14px 24px; background: #2563eb; border: none; color: #fff; border-radius: 10px; cursor: pointer; font-weight: 600; }
+.empty-state { text-align: center; margin: auto; color: #555; }
+.empty-state h3 { font-size: 20px; margin-bottom: 8px; color: #888; }
+</style>
 </head>
 <body>
-    <div id="landing-page" class="landing-page">
-        <nav class="navbar">
-            <a href="#" class="logo">RiskLens</a>
-            <div class="nav-buttons">
-                <button id="signInNavBtn">Sign In</button>
-                <button id="startFreeNavBtn" class="btn-primary">Start Free</button>
-            </div>
-        </nav>
-        <div class="container">
-            <section class="hero">
-                <h1>AI-Powered SEC Filing Intelligence</h1>
-                <p>Analyze 10-K, 10-Q filings instantly. Catch risk signals before the market does.</p>
-                <button id="startFreeHeroBtn" class="cta-button">Start Free — No Credit Card</button>
-            </section>
 
-            <section class="features-grid">
-                <div class="feature-card">
-                    <h3>Real-Time Risk Scoring</h3>
-                    <p>Our AI scores every filing for material risk, giving you an edge in understanding potential impacts.</p>
-                </div>
-                <div class="feature-card">
-                    <h3>Language Drift Detection</h3>
-                    <p>Catch subtle changes in company wording that might signal underlying shifts in strategy or risk.</p>
-                </div>
-                <div class="feature-card">
-                    <h3>Instant Alerts</h3>
-                    <p>Receive notifications within minutes of any new filing, ensuring you're always up-to-date.</p>
-                </div>
-            </section>
-
-            <section class="pricing-section">
-                <h2>Simple, Transparent Pricing</h2>
-                <div class="pricing-grid">
-                    <div class="price-card">
-                        <div>
-                            <h3>Free Trial</h3>
-                            <p class="price">$0<span>/month</span></p>
-                            <p class="text-muted">Perfect for getting started</p>
-                            <ul>
-                                <li>10 analyses</li>
-                                <li>Basic reports</li>
-                                <li>Email support</li>
-                            </ul>
-                        </div>
-                        <button class="select-plan-button" data-plan="free_trial">Start Free Trial</button>
-                    </div>
-                    <div class="price-card">
-                        <div>
-                            <h3>Pro</h3>
-                            <p class="price">$29<span>/month</span></p>
-                            <p class="text-muted">For individual analysts</p>
-                            <ul>
-                                <li>500 analyses/month</li>
-                                <li>All tools</li>
-                                <li>Export capabilities</li>
-                                <li>Priority support</li>
-                            </ul>
-                        </div>
-                        <button class="select-plan-button" data-plan="pro">Choose Pro</button>
-                    </div>
-                    <div class="price-card">
-                        <div>
-                            <h3>Business</h3>
-                            <p class="price">$99<span>/month</span></p>
-                            <p class="text-muted">For teams and enterprises</p>
-                            <ul>
-                                <li>Unlimited analyses</li>
-                                <li>API access</li>
-                                <li>Team seats</li>
-                                <li>Dedicated account manager</li>
-                            </ul>
-                        </div>
-                        <button class="select-plan-button" data-plan="business">Choose Business</button>
-                    </div>
-                </div>
-            </section>
-        </div>
+<!-- LANDING PAGE -->
+<div id="landing">
+  <nav class="navbar">
+    <div class="logo">RiskLens</div>
+    <div class="nav-buttons">
+      <button class="btn-ghost" onclick="openModal('login')">Sign In</button>
+      <button class="btn-primary" onclick="openModal('register')">Start Free</button>
     </div>
+  </nav>
 
-    <div id="auth-modal-overlay" class="auth-modal-overlay">
-        <div class="auth-modal">
-            <button class="close-modal-button" onclick="hideAuthModal()">X</button>
-            <div class="auth-modal-tabs">
-                <button id="signInTab" class="active">Sign In</button>
-                <button id="registerTab">Register</button>
-            </div>
-            <form id="auth-form" class="auth-modal-form">
-                <div id="signInFields">
-                    <label for="signInEmail">Email</label>
-                    <input type="email" id="signInEmail" placeholder="your@example.com" required>
-                    <label for="signInPassword">Password</label>
-                    <input type="password" id="signInPassword" placeholder="••••••••" required>
-                </div>
-                <div id="registerFields" class="hidden">
-                    <label for="registerEmail">Email</label>
-                    <input type="email" id="registerEmail" placeholder="your@example.com" required>
-                    <label for="registerPassword">Password</label>
-                    <input type="password" id="registerPassword" placeholder="••••••••" required>
-                </div>
-                <p id="authErrorMessage" class="error-message hidden"></p>
-                <button type="submit">Submit</button>
-            </form>
-        </div>
+  <div class="hero">
+    <h1>AI-Powered SEC Filing Intelligence</h1>
+    <p>Analyze 10-K, 10-Q filings instantly. Catch risk signals before the market does.</p>
+    <button class="btn-hero" onclick="openModal('register')">Start Free — No Credit Card</button>
+  </div>
+
+  <div class="features">
+    <div class="feature-card">
+      <h3>Real-Time Risk Scoring</h3>
+      <p>Our AI scores every filing for material risk factors, giving you instant clarity on company health.</p>
     </div>
-
-    <div id="dashboard-page" class="dashboard-page">
-        <aside class="sidebar">
-            <div>
-                <a href="#" class="logo">RiskLens</a>
-                <button id="newAnalysisBtn" class="new-analysis-button">New Analysis</button>
-                <div class="conversations-list">
-                    <h4>Conversations</h4>
-                    <ul id="conversationsList">
-                        <!-- Conversations will be loaded here by JS -->
-                    </ul>
-                </div>
-            </div>
-            <div>
-                <div class="usage-bar">
-                    <p>Analyses Used: <span id="analysesUsed">0</span>/<span id="analysesLimit">0</span></p>
-                    <div class="progress-container">
-                        <div id="usageProgressBar" class="progress-bar"></div>
-                    </div>
-                    <p>Plan: <span id="planBadge" class="plan-badge">Free Trial</span></p>
-                    <p><span id="daysRemaining">0</span> days remaining</p>
-                </div>
-                <button id="upgradePlanBtn" class="upgrade-plan-button">Upgrade Plan</button>
-                <button id="logoutBtn" class="upgrade-plan-button" style="margin-top: 10px;">Logout</button>
-            </div>
-        </aside>
-        <main class="chat-area">
-            <div id="chatHeader" class="chat-header">Select a conversation or start a new one</div>
-            <div id="messagesContainer" class="messages-container">
-                <!-- Messages will be loaded here by JS -->
-            </div>
-            <div class="typing-indicator" id="typingIndicator">RiskLens AI is typing...</div>
-            <div class="chat-input-area">
-                <input type="text" id="messageInput" placeholder="Ask about any company — try: 'Generate executive report for AAPL'">
-                <button id="sendMessageBtn">Send</button>
-            </div>
-        </main>
+    <div class="feature-card">
+      <h3>Language Drift Detection</h3>
+      <p>Catch subtle changes in company filings that signal trouble before the market reacts.</p>
     </div>
+    <div class="feature-card">
+      <h3>Instant Alerts</h3>
+      <p>Receive notifications within minutes of any new filing from companies on your watchlist.</p>
+    </div>
+  </div>
 
-    <script>
-        const API_BASE_URL = "/api"; // Or your deployed API URL
+  <div class="pricing-section">
+    <h2>Simple, Transparent Pricing</h2>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <h3>Free Trial</h3>
+        <div class="price">$0<span>/month</span></div>
+        <p>Perfect for getting started</p>
+        <ul>
+          <li>10 analyses</li>
+          <li>Basic reports</li>
+          <li>Email support</li>
+        </ul>
+        <button class="btn-plan" onclick="openModal('register')">Start Free Trial</button>
+      </div>
+      <div class="pricing-card">
+        <h3>Pro</h3>
+        <div class="price">$29<span>/month</span></div>
+        <p>For individual analysts</p>
+        <ul>
+          <li>500 analyses/month</li>
+          <li>All tools</li>
+          <li>Export capabilities</li>
+          <li>Priority support</li>
+        </ul>
+        <button class="btn-plan" onclick="selectPlan('pro')">Choose Pro</button>
+      </div>
+      <div class="pricing-card">
+        <h3>Business</h3>
+        <div class="price">$99<span>/month</span></div>
+        <p>For teams and enterprises</p>
+        <ul>
+          <li>Unlimited analyses</li>
+          <li>API access</li>
+          <li>Team seats</li>
+          <li>Dedicated account manager</li>
+        </ul>
+        <button class="btn-plan" onclick="selectPlan('business')">Choose Business</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-        // DOM Elements
-        const landingPage = document.getElementById('landing-page');
-        const dashboardPage = document.getElementById('dashboard-page');
-        const authModalOverlay = document.getElementById('auth-modal-overlay');
-        const signInTab = document.getElementById('signInTab');
-        const registerTab = document.getElementById('registerTab');
-        const signInFields = document.getElementById('signInFields');
-        const registerFields = document.getElementById('registerFields');
-        const authForm = document.getElementById('auth-form');
-        const authErrorMessage = document.getElementById('authErrorMessage');
-        const signInEmailInput = document.getElementById('signInEmail');
-        const signInPasswordInput = document.getElementById('signInPassword');
-        const registerEmailInput = document.getElementById('registerEmail');
-        const registerPasswordInput = document.getElementById('registerPassword');
+<!-- AUTH MODAL -->
+<div class="modal-overlay" id="authModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <h2>Welcome to RiskLens</h2>
+    <div class="tab-switcher">
+      <button class="tab-btn active" id="loginTab" onclick="switchTab('login')">Sign In</button>
+      <button class="tab-btn" id="registerTab" onclick="switchTab('register')">Register</button>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="authEmail" placeholder="you@example.com">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="authPassword" placeholder="••••••••">
+    </div>
+    <button class="btn-submit" onclick="submitAuth()" id="authSubmitBtn">Sign In</button>
+    <div class="error-msg" id="authError"></div>
+    <div class="success-msg" id="authSuccess"></div>
+  </div>
+</div>
 
-        const newAnalysisBtn = document.getElementById('newAnalysisBtn');
-        const conversationsList = document.getElementById('conversationsList');
-        const chatHeader = document.getElementById('chatHeader');
-        const messagesContainer = document.getElementById('messagesContainer');
-        const messageInput = document.getElementById('messageInput');
-        const sendMessageBtn = document.getElementById('sendMessageBtn');
-        const typingIndicator = document.getElementById('typingIndicator');
-        const analysesUsedSpan = document.getElementById('analysesUsed');
-        const analysesLimitSpan = document.getElementById('analysesLimit');
-        const usageProgressBar = document.getElementById('usageProgressBar');
-        const planBadge = document.getElementById('planBadge');
-        const daysRemainingSpan = document.getElementById('daysRemaining');
-        const logoutBtn = document.getElementById('logoutBtn');
+<!-- DASHBOARD -->
+<div class="dashboard" id="dashboard">
+  <div class="sidebar">
+    <div class="sidebar-logo">RiskLens</div>
+    <button class="btn-new-chat" onclick="newConversation()">+ New Analysis</button>
+    <div class="conv-list" id="convList"></div>
+    <div class="sidebar-footer">
+      <div class="usage-bar-wrap">
+        <div class="usage-label" id="usageLabel">0/10 analyses used</div>
+        <div class="usage-bar"><div class="usage-fill" id="usageFill" style="width:0%"></div></div>
+      </div>
+      <div class="plan-badge" id="planBadge">FREE TRIAL</div>
+      <button class="btn-upgrade">Upgrade Plan</button>
+      <button class="btn-logout" onclick="logout()">Sign Out</button>
+    </div>
+  </div>
+  <div class="chat-area">
+    <div class="chat-header" id="chatHeader">New Analysis</div>
+    <div class="messages-area" id="messagesArea">
+      <div class="empty-state">
+        <h3>Start your analysis</h3>
+        <p>Try: "Generate executive report for AAPL"</p>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <input class="chat-input" id="chatInput" placeholder='Ask about any company — try: "Generate executive report for AAPL"' onkeydown="if(event.key==='Enter')sendMessage()">
+      <button class="btn-send" onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+</div>
 
-        let currentConversationId = null;
-        let currentConversationTitle = "New Conversation";
+<script>
+const API = '';
+let token = localStorage.getItem('rl_token');
+let currentConvId = null;
+let currentTab = 'login';
 
-        // --- Utility Functions ---
-        function showView(viewId) {
-            landingPage.classList.add('hidden');
-            dashboardPage.classList.add('hidden');
-            authModalOverlay.classList.add('hidden'); // Ensure modal is hidden by default
+// INIT
+window.onload = function() {
+  if (token) showDashboard();
+  else showLanding();
+};
 
-            if (viewId === 'landing') {
-                landingPage.classList.remove('hidden');
-            } else if (viewId === 'dashboard') {
-                dashboardPage.classList.remove('hidden');
-            }
-        }
+function showLanding() {
+  document.getElementById('landing').style.display = 'block';
+  document.getElementById('dashboard').style.display = 'none';
+}
 
-        function showAuthModal(initialTab = 'signIn') {
-            authModalOverlay.classList.remove('hidden'); // Show the modal overlay
-            if (initialTab === 'register') {
-                registerTab.click();
-            } else {
-                signInTab.click();
-            }
-        }
+function showDashboard() {
+  document.getElementById('landing').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'flex';
+  loadConversations();
+  loadUsage();
+}
 
-        function hideAuthModal() {
-            authModalOverlay.classList.add('hidden');
-            // Determine which view to show after closing modal (e.g., landing page if not logged in)
-            if (getToken()) {
-                showView('dashboard');
-            } else {
-                showView('landing');
-            }
-        }
+// MODAL
+function openModal(tab) {
+  document.getElementById('authModal').classList.add('active');
+  switchTab(tab);
+}
 
-        function getToken() {
-            return localStorage.getItem('risklens_jwt');
-        }
+function closeModal() {
+  document.getElementById('authModal').classList.remove('active');
+  document.getElementById('authError').style.display = 'none';
+  document.getElementById('authSuccess').style.display = 'none';
+}
 
-        function setToken(token) {
-            localStorage.setItem('risklens_jwt', token);
-        }
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('loginTab').classList.toggle('active', tab === 'login');
+  document.getElementById('registerTab').classList.toggle('active', tab === 'register');
+  document.getElementById('authSubmitBtn').textContent = tab === 'login' ? 'Sign In' : 'Create Account';
+}
 
-        function clearToken() {
-            localStorage.removeItem('risklens_jwt');
-        }
+function selectPlan(plan) {
+  localStorage.setItem('selectedPlan', plan);
+  openModal('register');
+}
 
-        async function apiCall(method, path, body = null, authRequired = true) {
-            const headers = {
-                'Content-Type': 'application/json',
-            };
-            if (authRequired) {
-                const token = getToken();
-                if (!token) {
-                    console.error("Authentication required, but no token found.");
-                    showView('landing');
-                    return null;
-                }
-                headers['Authorization'] = `Bearer ${token}`;
-            }
+async function submitAuth() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+  const errEl = document.getElementById('authError');
+  const sucEl = document.getElementById('authSuccess');
+  errEl.style.display = 'none';
+  sucEl.style.display = 'none';
 
-            const config = {
-                method: method,
-                headers: headers,
-            };
-            if (body) {
-                config.body = JSON.stringify(body);
-            }
+  if (!email || !password) {
+    errEl.textContent = 'Please enter email and password.';
+    errEl.style.display = 'block';
+    return;
+  }
 
-            try {
-                const response = await fetch(`${API_BASE_URL}${path}`, config);
-                if (response.status === 401) {
-                    console.warn("Unauthorized access, redirecting to login.");
-                    clearToken();
-                    showView('landing');
-                    return null;
-                }
-                const data = await response.json();
-                if (!response.ok) {
-                    console.error(`API Error (${response.status}):`, data.detail || data.message);
-                    throw new Error(data.detail || data.message || "API call failed");
-                }
-                return data;
-            } catch (error) {
-                console.error("Network or API error:", error);
-                throw error;
-            }
-        }
+  const endpoint = currentTab === 'login' ? '/api/auth/login' : '/api/auth/register';
+  const btn = document.getElementById('authSubmitBtn');
+  btn.textContent = 'Please wait...';
+  btn.disabled = true;
 
-        function displayMessage(message) {
-            const messageBubble = document.createElement('div');
-            messageBubble.classList.add('message-bubble');
-            messageBubble.classList.add(message.role);
+  try {
+    const res = await fetch(API + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
 
-            if (message.role === 'assistant') {
-                messageBubble.innerHTML = `
-                    <div class="avatar">AI</div>
-                    <div class="content">${message.content}</div>
-                    ${message.tool_used ? `<span class="tool-badge">${message.tool_used.replace('_', ' ')}</span>` : ''}
-                `;
-            } else {
-                messageBubble.textContent = message.content;
-            }
-            messagesContainer.appendChild(messageBubble);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
+    if (!res.ok) {
+      errEl.textContent = data.detail || 'Something went wrong.';
+      errEl.style.display = 'block';
+    } else {
+      token = data.access_token;
+      localStorage.setItem('rl_token', token);
+      sucEl.textContent = currentTab === 'login' ? 'Signed in!' : 'Account created!';
+      sucEl.style.display = 'block';
+      setTimeout(() => { closeModal(); showDashboard(); }, 800);
+    }
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.';
+    errEl.style.display = 'block';
+  }
 
-        function showTypingIndicator() {
-            typingIndicator.classList.remove('hidden');
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
+  btn.textContent = currentTab === 'login' ? 'Sign In' : 'Create Account';
+  btn.disabled = false;
+}
 
-        function hideTypingIndicator() {
-            typingIndicator.classList.add('hidden');
-        }
+// LOGOUT
+function logout() {
+  localStorage.removeItem('rl_token');
+  token = null;
+  currentConvId = null;
+  showLanding();
+}
 
-        // --- Auth Functions ---
-        async function handleAuth(event) {
-            event.preventDefault();
-            authErrorMessage.classList.add('hidden');
-            authErrorMessage.textContent = '';
+// CONVERSATIONS
+async function loadConversations() {
+  try {
+    const res = await fetch(API + '/api/conversations', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = await res.json();
+    const list = document.getElementById('convList');
+    list.innerHTML = '';
+    const convs = Array.isArray(data) ? data : (data.conversations || []);
+    convs.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'conv-item' + (c.id === currentConvId ? ' active' : '');
+      div.textContent = c.title || 'Analysis';
+      div.onclick = () => loadMessages(c.id, c.title);
+      list.appendChild(div);
+    });
+  } catch(e) { console.log('Conv load error', e); }
+}
 
-            const isRegister = registerTab.classList.contains('active');
-            const email = isRegister ? registerEmailInput.value : signInEmailInput.value;
-            const password = isRegister ? registerPasswordInput.value : signInPasswordInput.value;
+async function newConversation() {
+  currentConvId = null;
+  document.getElementById('chatHeader').textContent = 'New Analysis';
+  document.getElementById('messagesArea').innerHTML = 
+    '<div class="empty-state"><h3>Start your analysis</h3><p>Try: "Generate executive report for AAPL"</p></div>';
+}
 
-            try {
-                if (isRegister) {
-                    await apiCall('POST', '/auth/register', { email, password }, false);
-                    alert("Registration successful! Please check your email to verify your account.");
-                    signInTab.click(); // Switch to sign in tab
-                } else {
-                    const data = await apiCall('POST', '/auth/login', { email, password }, false);
-                    if (data && data.access_token) {
-                        setToken(data.access_token);
-                        showView('dashboard');
-                        loadDashboardData();
-                    } else {
-                        throw new Error("Login failed: No access token received.");
-                    }
-                }
-            } catch (error) {
-                authErrorMessage.textContent = error.message || "An unexpected error occurred.";
-                authErrorMessage.classList.remove('hidden');
-                console.error("Auth error:", error);
-            }
-        }
+async function loadMessages(convId, title) {
+  currentConvId = convId;
+  document.getElementById('chatHeader').textContent = title || 'Analysis';
+  document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
+  try {
+    const res = await fetch(API + '/api/messages/' + convId, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = await res.json();
+    const area = document.getElementById('messagesArea');
+    area.innerHTML = '';
+    const msgs = Array.isArray(data) ? data : (data.messages || []);
+    msgs.forEach(m => appendMessage(m.role, m.content, m.tool_used));
+  } catch(e) { console.log('Msg load error', e); }
+}
 
-        function setupAuthModal() {
-            signInTab.addEventListener('click', () => {
-                signInTab.classList.add('active');
-                registerTab.classList.remove('active');
-                signInFields.classList.remove('hidden');
-                registerFields.classList.add('hidden');
-                authErrorMessage.classList.add('hidden');
-            });
+// MESSAGES
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
 
-            registerTab.addEventListener('click', () => {
-                registerTab.classList.add('active');
-                signInTab.classList.remove('active');
-                registerFields.classList.remove('hidden');
-                signInFields.classList.add('hidden');
-                authErrorMessage.classList.add('hidden');
-            });
+  // Create conversation if needed
+  if (!currentConvId) {
+    try {
+      const res = await fetch(API + '/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ title: text.slice(0, 40) })
+      });
+      const data = await res.json();
+      currentConvId = data.id || data.conversation?.id;
+      loadConversations();
+    } catch(e) { console.log('Create conv error', e); }
+  }
 
-            authForm.addEventListener('submit', handleAuth);
+  appendMessage('user', text);
+  const typing = document.createElement('div');
+  typing.className = 'typing';
+  typing.id = 'typing';
+  typing.textContent = 'Analyzing...';
+  document.getElementById('messagesArea').appendChild(typing);
+  scrollBottom();
 
-            document.getElementById('signInNavBtn').addEventListener('click', () => showAuthModal('signIn'));
-            document.getElementById('startFreeNavBtn').addEventListener('click', () => showAuthModal('register'));
-            document.getElementById('startFreeHeroBtn').addEventListener('click', () => showAuthModal('register'));
+  try {
+    const res = await fetch(API + '/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ conversation_id: currentConvId, content: text })
+    });
+    const data = await res.json();
+    document.getElementById('typing')?.remove();
+    const reply = data.content || data.message || data.response || JSON.stringify(data);
+    appendMessage('assistant', reply, data.tool_used);
+    loadUsage();
+  } catch(e) {
+    document.getElementById('typing')?.remove();
+    appendMessage('assistant', 'Error: Could not get response. Please try again.');
+  }
+}
 
-            // Pricing buttons
-            document.querySelectorAll('.select-plan-button').forEach(button => {
-                button.addEventListener('click', (event) => {
-                    const plan = event.target.dataset.plan;
-                    if (plan === 'pro' || plan === 'business') {
-                        localStorage.setItem('selectedPlan', plan);
-                    } else {
-                        localStorage.removeItem('selectedPlan');
-                    }
-                    showAuthModal('register');
-                });
-            });
-        }
+function appendMessage(role, content, tool) {
+  const area = document.getElementById('messagesArea');
+  const empty = area.querySelector('.empty-state');
+  if (empty) empty.remove();
 
-        // --- Dashboard Functions ---
-        async function loadConversations() {
-            try {
-                const conversations = await apiCall('GET', '/conversations');
-                conversationsList.innerHTML = '';
-                if (conversations && conversations.length > 0) {
-                    conversations.forEach(conv => {
-                        const li = document.createElement('li');
-                        const a = document.createElement('a');
-                        a.href = "#";
-                        a.textContent = conv.title;
-                        a.dataset.conversationId = conv.id;
-                        a.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            loadConversation(conv.id, conv.title);
-                            // Remove active from all, add to current
-                            document.querySelectorAll('#conversationsList a').forEach(item => item.classList.remove('active'));
-                            a.classList.add('active');
-                        });
-                        li.appendChild(a);
-                        conversationsList.appendChild(li);
-                    });
-                } else {
-                    conversationsList.innerHTML = '<li><p style="color: var(--text-muted); padding: 0.75rem 1rem;">No conversations yet.</p></li>';
-                }
-            } catch (error) {
-                console.error("Failed to load conversations:", error);
-                // Optionally display an error message to the user
-            }
-        }
+  const div = document.createElement('div');
+  div.className = 'message ' + role;
+  div.innerHTML = '<div class="message-bubble">' + escapeHtml(content) + '</div>' +
+    (tool ? '<div class="tool-badge">Tool: ' + tool + '</div>' : '');
+  area.appendChild(div);
+  scrollBottom();
+}
 
-        async function loadConversation(conversationId, title) {
-            currentConversationId = conversationId;
-            currentConversationTitle = title;
-            chatHeader.textContent = title;
-            messagesContainer.innerHTML = ''; // Clear existing messages
+function escapeHtml(text) {
+  return String(text).replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>');
+}
 
-            try {
-                const messages = await apiCall('GET', `/messages/${conversationId}`);
-                if (messages && messages.length > 0) {
-                    messages.forEach(displayMessage);
-                } else {
-                    messagesContainer.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Start chatting!</p>';
-                }
-            } catch (error) {
-                console.error("Failed to load messages:", error);
-                messagesContainer.innerHTML = `<p style="text-align: center; color: #ef4444;">Error loading messages: ${error.message}</p>`;
-            }
-        }
+function scrollBottom() {
+  const area = document.getElementById('messagesArea');
+  area.scrollTop = area.scrollHeight;
+}
 
-        async function sendMessage() {
-            const content = messageInput.value.trim();
-            if (!content) return;
-
-            messageInput.value = '';
-            displayMessage({ role: 'user', content: content });
-            showTypingIndicator();
-
-            try {
-                let conversationIdToSend = currentConversationId;
-                if (!conversationIdToSend) {
-                    // Create new conversation if it's the first message
-                    const newConv = await apiCall('POST', '/conversations', { title: content.substring(0, 50) + "..." });
-                    conversationIdToSend = newConv.id;
-                    currentConversationId = newConv.id;
-                    currentConversationTitle = newConv.title;
-                    chatHeader.textContent = newConv.title;
-                    await loadConversations(); // Reload sidebar to show new conversation
-                    // Select the new conversation in the sidebar
-                    document.querySelectorAll('#conversationsList a').forEach(item => item.classList.remove('active'));
-                    const newConvLink = document.querySelector(`[data-conversation-id="${newConv.id}"]`);
-                    if (newConvLink) newConvLink.classList.add('active');
-                }
-
-                const aiMessage = await apiCall('POST', '/messages', {
-                    conversation_id: conversationIdToSend,
-                    content: content
-                });
-                displayMessage(aiMessage);
-                await loadUsage(); // Usage might have incremented
-            } catch (error) {
-                console.error("Failed to send message:", error);
-                displayMessage({ role: 'assistant', content: `Error: ${error.message}` });
-            } finally {
-                hideTypingIndicator();
-            }
-        }
-
-        async function loadUsage() {
-            try {
-                const usage = await apiCall('GET', '/usage/me');
-                if (usage) {
-                    analysesUsedSpan.textContent = usage.analyses_used;
-                    analysesLimitSpan.textContent = usage.limit === -1 ? 'Unlimited' : usage.limit;
-                    planBadge.textContent = usage.plan.replace('_', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-                    daysRemainingSpan.textContent = usage.days_remaining;
-
-                    const progress = usage.limit === -1 ? 100 : (usage.analyses_used / usage.limit) * 100;
-                    usageProgressBar.style.width = `${Math.min(100, progress)}%`;
-                }
-            } catch (error) {
-                console.error("Failed to load usage:", error);
-            }
-        }
-
-        async function loadDashboardData() {
-            await loadConversations();
-            await loadUsage();
-            // Optionally load the most recent conversation if available
-            const firstConversationLink = conversationsList.querySelector('a');
-            if (firstConversationLink) {
-                firstConversationLink.click();
-            }
-        }
-
-        function handleLogout() {
-            clearToken();
-            showView('landing');
-            currentConversationId = null;
-            currentConversationTitle = "New Conversation";
-            messagesContainer.innerHTML = '';
-            chatHeader.textContent = "Select a conversation or start a new one";
-        }
-
-        // --- Event Listeners ---
-        sendMessageBtn.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-        newAnalysisBtn.addEventListener('click', () => {
-            currentConversationId = null;
-            currentConversationTitle = "New Conversation";
-            chatHeader.textContent = "New Conversation";
-            messagesContainer.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Start chatting!</p>';
-            document.querySelectorAll('#conversationsList a').forEach(item => item.classList.remove('active'));
-        });
-        logoutBtn.addEventListener('click', handleLogout);
-
-
-        // --- Initial Load ---
-        document.addEventListener('DOMContentLoaded', () => {
-            setupAuthModal();
-            if (getToken()) {
-                showView('dashboard');
-                loadDashboardData();
-            } else {
-                showView('landing');
-            }
-        });
-    </script>
+// USAGE
+async function loadUsage() {
+  try {
+    const res = await fetch(API + '/api/usage/me', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = await res.json();
+    const used = data.analyses_used || 0;
+    const limit = data.limit || 10;
+    const plan = (data.plan || 'free_trial').toUpperCase().replace('_', ' ');
+    document.getElementById('usageLabel').textContent = used + '/' + limit + ' analyses used';
+    document.getElementById('usageFill').style.width = Math.min((used/limit)*100, 100) + '%';
+    document.getElementById('planBadge').textContent = plan;
+  } catch(e) { console.log('Usage error', e); }
+}
+</script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 import os
-import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from api.core.database import get_supabase_client
 
 security = HTTPBearer()
 
@@ -10,37 +10,24 @@ async def get_current_user(
 ):
     token = credentials.credentials
     try:
-        jwt_secret = os.environ.get("SUPABASE_JWT_SECRET", "")
-        if not jwt_secret:
-            raise HTTPException(status_code=500,
-              detail="JWT secret not configured")
-
-        payload = jwt.decode(
-            token,
-            jwt_secret,
-            algorithms=["HS256"],
-            options={"verify_aud": False}
-        )
-
-        user_id = payload.get("sub")
-        email = payload.get("email", "")
-
-        if not user_id:
-            raise HTTPException(status_code=401,
-              detail="Invalid token")
-
-        return {"user_id": user_id, "email": email}
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401,
-          detail="Token expired. Please sign in again.")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401,
-          detail="Invalid token")
+        supabase = get_supabase_client()
+        # Let Supabase verify the token - no manual JWT needed
+        response = supabase.auth.get_user(token)
+        
+        if not response or not response.user:
+            raise HTTPException(status_code=401, 
+              detail="Invalid or expired token")
+        
+        user = response.user
+        return {
+            "user_id": user.id,
+            "email": user.email or ""
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[auth] JWT error: {e}")
+        print(f"[auth] Error: {e}")
         raise HTTPException(status_code=401,
           detail="Could not validate credentials")
 
@@ -49,7 +36,6 @@ async def require_usage_limit(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        from api.core.database import get_supabase_client
         supabase = get_supabase_client()
         user_id = current_user["user_id"]
 
@@ -68,7 +54,6 @@ async def require_usage_limit(
         plan_data = result.data[0]
         plan = plan_data.get("plan", "free_trial")
         used = plan_data.get("analyses_used", 0)
-
         limits = {"free_trial": 10, "pro": 500, "business": 999999}
         limit = limits.get(plan, 10)
 
@@ -77,11 +62,10 @@ async def require_usage_limit(
                 status_code=403,
                 detail=f"Usage limit reached ({used}/{limit}). Please upgrade."
             )
-
         return current_user
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[usage] Error checking limit: {e}")
+        print(f"[usage] Error: {e}")
         return current_user

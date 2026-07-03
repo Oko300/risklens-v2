@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Optional
 from supabase import Client
 from passlib.context import CryptContext
-import jwt
 
 from api.models.schemas import UserRegister, UserLogin, ConnectAI
 from api.core.database import get_supabase_client

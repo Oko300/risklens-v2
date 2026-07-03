@@ -16,91 +16,25 @@ def extract_ticker(text: str) -> str:
     return ""
 
 async def run_best_tool(ticker: str, message: str) -> tuple:
-    """Returns (result, tool_name) - runs exactly ONE tool"""
-    import importlib
-    import inspect
+    from api.services.tool_bridge import run_tool
     
     msg_lower = message.lower()
     
-    # Decide which single tool to use based on message intent
     if any(w in msg_lower for w in 
-           ["compare", "vs", "versus", "difference", 
-            "changed", "last two", "previous"]):
-        tool_module = "tools.compare_filings"
-        tool_label = "compare_filings"
-        
+           ["compare", "vs", "versus", "difference"]):
+        tool_hint = "compare_filings"
     elif any(w in msg_lower for w in 
-             ["trend", "history", "years", "over time", 
-              "past", "multiple", "trajectory"]):
-        tool_module = "tools.risk_trends"
-        tool_label = "risk_trends"
-        
+             ["trend", "history", "years", "over time"]):
+        tool_hint = "risk_trends"
     elif any(w in msg_lower for w in 
-             ["categor", "breakdown", "types", 
-              "domain", "classify", "group"]):
-        tool_module = "tools.risk_categorizer"
-        tool_label = "categorize_risks"
-        
+             ["categor", "breakdown", "types", "domain"]):
+        tool_hint = "categorize_risks"
     else:
-        # Default - executive report for everything else
-        tool_module = "tools.executive_report"
-        tool_label = "executive_report"
+        tool_hint = "executive_report"
     
-    print(f"[tool] Selected tool: {tool_label} for ticker: {ticker}")
-    
-    try:
-        module = importlib.import_module(tool_module)
-        
-        # Find all public functions in the module
-        functions = [
-            (name, fn) for name, fn in 
-            inspect.getmembers(module, inspect.isfunction)
-            if not name.startswith('_')
-        ]
-        print(f"[tool] Available functions in {tool_module}: "
-              f"{[f[0] for f in functions]}")
-        
-        # Try each function until one works
-        for func_name, func in functions:
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            print(f"[tool] Trying {func_name} with params: {params}")
-            
-            try:
-                if 'ticker' in params and 'form_type' in params:
-                    result = func(ticker=ticker, form_type="10-K")
-                elif 'ticker' in params and 'n_filings' in params:
-                    result = func(ticker=ticker, 
-                                form_type="10-K", n_filings=3)
-                elif 'ticker' in params:
-                    result = func(ticker=ticker)
-                elif len(params) == 1:
-                    result = func(ticker)
-                elif len(params) == 0:
-                    continue
-                else:
-                    result = func(ticker)
-                
-                if result is not None:
-                    if isinstance(result, dict):
-                        import json
-                        return json.dumps(result, indent=2), tool_label
-                    return str(result), tool_label
-                    
-            except TypeError as e:
-                print(f"[tool] {func_name} TypeError: {e}")
-                continue
-            except Exception as e:
-                print(f"[tool] {func_name} error: {e}")
-                continue
-        
-        return f"Could not run {tool_label} for {ticker}", tool_label
-        
-    except Exception as e:
-        import traceback
-        print(f"[tool] Module error: {e}")
-        print(traceback.format_exc())
-        return f"Analysis error: {str(e)}", tool_label
+    print(f"[msg] Using tool_hint: {tool_hint} for ticker: {ticker}")
+    result = await run_tool(tool_hint, ticker)
+    return result, tool_hint
 
 async def call_gemini(api_key: str, 
                       user_message: str, 

@@ -37,23 +37,23 @@ def detect_tool(text: str) -> str:
 async def run_tool(tool_name: str, ticker: str) -> str:
     try:
         if tool_name == "generate_executive_report":
-            from tools.executive_report import generate_executive_report
-            result = generate_executive_report(
+            from tools.executive_report import register_executive_report
+            result = register_executive_report(
                 ticker=ticker, form_type="10-K"
             )
         elif tool_name == "compare_filings":
-            from tools.compare_filings import compare_filings
-            result = compare_filings(
+            from tools.compare_filings import register_compare_filings
+            result = register_compare_filings(
                 ticker=ticker, form_type="10-K"
             )
         elif tool_name == "analyze_risk_trends":
-            from tools.risk_trends import analyze_risk_trends
-            result = analyze_risk_trends(
+            from tools.risk_trends import register_risk_trends
+            result = register_risk_trends(
                 ticker=ticker, form_type="10-K", n_filings=3
             )
         elif tool_name == "categorize_risks":
-            from tools.risk_categorizer import categorize_risks
-            result = categorize_risks(
+            from tools.risk_categorizer import register_risk_categorizer
+            result = register_risk_categorizer(
                 ticker=ticker, form_type="10-K"
             )
         else:

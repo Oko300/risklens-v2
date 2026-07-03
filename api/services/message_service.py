@@ -142,6 +142,36 @@ unless listing specific risk items."""
                 data = response.json()
                 return (data["candidates"][0]["content"]
                         ["parts"][0]["text"])
+            elif response.status_code == 429:
+                print("[gemini] Quota exceeded")
+                return (
+                    "⚠️ **API Quota Limit Reached**\n\n"
+                    "Your Gemini API key has hit its daily usage limit. "
+                    "Here's what you can do:\n\n"
+                    "**Option 1:** Wait until tomorrow — Google resets "
+                    "free tier limits every 24 hours.\n\n"
+                    "**Option 2:** Upgrade your Google AI Studio account "
+                    "to a paid plan for higher limits.\n\n"
+                    "**Option 3:** Go to **Account Settings → AI Connection** "
+                    "and connect a different API key.\n\n"
+                    "**Your raw filing data is still available below:**\n\n"
+                    f"{tool_result[:2000]}"
+                )
+            elif response.status_code == 401:
+                return (
+                    "❌ **Invalid API Key**\n\n"
+                    "Your Gemini API key is invalid or has been revoked.\n"
+                    "Please go to **Account Settings → AI Connection** "
+                    "and reconnect with a valid key from "
+                    "https://aistudio.google.com"
+                )
+            elif response.status_code == 403:
+                return (
+                    "❌ **API Access Denied**\n\n"
+                    "Your Gemini API key does not have permission to use "
+                    "this model. Please check your Google AI Studio account "
+                    "or try a different API key."
+                )
             else:
                 print(f"[gemini] Error: {response.text}")
                 return tool_result

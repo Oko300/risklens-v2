@@ -15,58 +15,92 @@ def extract_ticker(text: str) -> str:
             return clean
     return ""
 
-def detect_tool(text: str) -> str:
-    text_lower = text.lower()
-    if any(w in text_lower for w in 
-           ["executive report", "analyst report", "full report"]):
-        return "generate_executive_report"
-    if any(w in text_lower for w in 
-           ["compare", "vs", "versus", "difference"]):
-        return "compare_filings"
-    if any(w in text_lower for w in 
-           ["trend", "history", "years", "over time", "multiple"]):
-        return "analyze_risk_trends"
-    if any(w in text_lower for w in 
-           ["categor", "breakdown", "types of risk", "domain"]):
-        return "categorize_risks"
-    if any(w in text_lower for w in 
-           ["8-k", "8k", "event", "recent filing", "latest"]):
-        return "generate_executive_report"
-    return "generate_executive_report"
-
-async def run_tool(tool_name: str, ticker: str) -> str:
-    try:
-        if tool_name == "generate_executive_report":
-            from tools.executive_report import register_executive_report
-            result = register_executive_report(
-                ticker=ticker, form_type="10-K"
-            )
-        elif tool_name == "compare_filings":
-            from tools.compare_filings import register_compare_filings
-            result = register_compare_filings(
-                ticker=ticker, form_type="10-K"
-            )
-        elif tool_name == "analyze_risk_trends":
-            from tools.risk_trends import register_risk_trends
-            result = register_risk_trends(
-                ticker=ticker, form_type="10-K", n_filings=3
-            )
-        elif tool_name == "categorize_risks":
-            from tools.risk_categorizer import register_risk_categorizer
-            result = register_risk_categorizer(
-                ticker=ticker, form_type="10-K"
-            )
-        else:
-            return f"Unknown tool: {tool_name}"
+async def run_best_tool(ticker: str, message: str) -> tuple:
+    """Returns (result, tool_name) - runs exactly ONE tool"""
+    import importlib
+    import inspect
+    
+    msg_lower = message.lower()
+    
+    # Decide which single tool to use based on message intent
+    if any(w in msg_lower for w in 
+           ["compare", "vs", "versus", "difference", 
+            "changed", "last two", "previous"]):
+        tool_module = "tools.compare_filings"
+        tool_label = "compare_filings"
         
-        if isinstance(result, dict):
-            import json
-            return json.dumps(result, indent=2)
-        return str(result)
+    elif any(w in msg_lower for w in 
+             ["trend", "history", "years", "over time", 
+              "past", "multiple", "trajectory"]):
+        tool_module = "tools.risk_trends"
+        tool_label = "risk_trends"
+        
+    elif any(w in msg_lower for w in 
+             ["categor", "breakdown", "types", 
+              "domain", "classify", "group"]):
+        tool_module = "tools.risk_categorizer"
+        tool_label = "categorize_risks"
+        
+    else:
+        # Default - executive report for everything else
+        tool_module = "tools.executive_report"
+        tool_label = "executive_report"
+    
+    print(f"[tool] Selected tool: {tool_label} for ticker: {ticker}")
+    
+    try:
+        module = importlib.import_module(tool_module)
+        
+        # Find all public functions in the module
+        functions = [
+            (name, fn) for name, fn in 
+            inspect.getmembers(module, inspect.isfunction)
+            if not name.startswith('_')
+        ]
+        print(f"[tool] Available functions in {tool_module}: "
+              f"{[f[0] for f in functions]}")
+        
+        # Try each function until one works
+        for func_name, func in functions:
+            sig = inspect.signature(func)
+            params = list(sig.parameters.keys())
+            print(f"[tool] Trying {func_name} with params: {params}")
+            
+            try:
+                if 'ticker' in params and 'form_type' in params:
+                    result = func(ticker=ticker, form_type="10-K")
+                elif 'ticker' in params and 'n_filings' in params:
+                    result = func(ticker=ticker, 
+                                form_type="10-K", n_filings=3)
+                elif 'ticker' in params:
+                    result = func(ticker=ticker)
+                elif len(params) == 1:
+                    result = func(ticker)
+                elif len(params) == 0:
+                    continue
+                else:
+                    result = func(ticker)
+                
+                if result is not None:
+                    if isinstance(result, dict):
+                        import json
+                        return json.dumps(result, indent=2), tool_label
+                    return str(result), tool_label
+                    
+            except TypeError as e:
+                print(f"[tool] {func_name} TypeError: {e}")
+                continue
+            except Exception as e:
+                print(f"[tool] {func_name} error: {e}")
+                continue
+        
+        return f"Could not run {tool_label} for {ticker}", tool_label
         
     except Exception as e:
-        print(f"[tool] Error running {tool_name}: {e}")
-        return f"Error running analysis: {str(e)}"
+        import traceback
+        print(f"[tool] Module error: {e}")
+        print(traceback.format_exc())
+        return f"Analysis error: {str(e)}", tool_label
 
 async def call_gemini(api_key: str, 
                       user_message: str, 
@@ -132,8 +166,7 @@ async def process_message(user_id: str,
     except Exception as e:
         print(f"[msg] Save user msg error: {e}")
     
-    # Detect tool and ticker
-    tool_name = detect_tool(content)
+    # Detect ticker
     ticker = extract_ticker(content)
     
     if not ticker:
@@ -151,9 +184,11 @@ async def process_message(user_id: str,
             pass
         return {"content": reply, "tool_used": None}
     
-    # Run the tool
-    print(f"[msg] Running {tool_name} for {ticker}")
-    tool_result = await run_tool(tool_name, ticker)
+    if ticker:
+        tool_result, tool_name = await run_best_tool(ticker, content)
+    else:
+        tool_result = ""
+        tool_name = None
     
     # Get user's AI key
     ai_response = tool_result

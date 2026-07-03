@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from supabase import Client
 
 from api.core.database import get_supabase_client
@@ -38,14 +38,38 @@ async def read_users_me(
 ):
     return current_user
 
-@router.post("/connect-ai", response_model=dict)
+@router.post("/connect-ai")
 async def connect_ai(
-    ai_data: ConnectAI,
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
-    supabase: Annotated[Client, Depends(get_supabase_client)]
+    request: Request,
+    current_user = Depends(get_current_user)
 ):
     try:
-        auth_service = AuthService(supabase)
-        return await auth_service.connect_ai_provider(str(current_user.id), ai_data)
+        body = await request.json()
+        provider = body.get("provider", "")
+        api_key = body.get("api_key", "")
+        
+        if not provider or not api_key:
+            raise HTTPException(status_code=400, 
+              detail="Provider and api_key are required")
+        
+        # Save to Supabase user metadata
+        from api.core.database import get_supabase_client
+        supabase = get_supabase_client()
+        
+        # Store in a simple user_ai_keys table
+        # First try to upsert
+        result = supabase.table("user_ai_keys").upsert({
+            "user_id": current_user["user_id"],
+            "provider": provider,
+            "api_key": api_key,
+            "updated_at": "now()"
+        }, on_conflict="user_id").execute()
+        
+        return {"success": True, "provider": provider}
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        print(f"Connect AI error: {e}")
+        raise HTTPException(status_code=500, 
+          detail=f"Failed to save AI key: {str(e)}")

@@ -1,4 +1,5 @@
 import os
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 from supabase import Client
@@ -13,7 +14,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_DAYS = 30 # Changed from minutes to days
 
 class AuthService:
     def __init__(self, supabase: Client):
@@ -25,7 +26,7 @@ class AuthService:
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS) # Changed to days
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
@@ -54,7 +55,7 @@ class AuthService:
             })
             user = response.user
             if user:
-                access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+                access_token_expires = timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS) # Changed to days
                 access_token = self.create_access_token(
                     data={"sub": str(user.id)}, expires_delta=access_token_expires
                 )

@@ -15,7 +15,7 @@ class MessageService:
         self.usage_service = UsageService(supabase)
         self.ai_api_url = os.environ.get("AI_API_URL", "http://localhost:8000/chat") # Placeholder for AI service
 
-    async def send_message(self, user_id: uuid.UUID, message_data: MessageCreate, ai_provider: Optional[str], ai_api_key: Optional[str]) -> Message:
+    async def send_message(self, user_id: uuid.UUID, message_data: MessageCreate) -> Message:
         # Save user message
         user_message = {
             "conversation_id": str(message_data.conversation_id),
@@ -30,6 +30,18 @@ class MessageService:
         except Exception as e:
             print(f"Error saving user message: {e}")
             raise
+
+        # Fetch AI provider details
+        ai_provider = None
+        ai_api_key = None
+        try:
+            response = self.supabase.from_('user_ai_keys').select('provider, api_key').eq('user_id', str(user_id)).single().execute()
+            if response.data:
+                ai_provider = response.data['provider']
+                ai_api_key = response.data['api_key']
+        except Exception as e:
+            print(f"No AI key found for user {user_id}: {e}")
+            # Continue without AI key if not found, or raise an error if it's mandatory
 
         # Detect tool
         tool_name = self.tool_runner.detect_tool(message_data.content)

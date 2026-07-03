@@ -1,41 +1,96 @@
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from supabase import Client
-
+from fastapi import APIRouter, HTTPException, Request, Depends
 from api.core.database import get_supabase_client
 from api.core.dependencies import get_current_user
-from api.models.schemas import UserRegister, UserLogin, Token, UserInfo, ConnectAI
-from api.services.auth_service import AuthService
 
 router = APIRouter()
 
-@router.post("/register", response_model=dict)
-async def register(
-    user_data: UserRegister,
-    supabase: Annotated[Client, Depends(get_supabase_client)]
-):
+@router.post("/login")
+async def login(request: Request):
     try:
-        auth_service = AuthService(supabase)
-        return await auth_service.register_user(user_data)
+        body = await request.json()
+        email = body.get("email", "")
+        password = body.get("password", "")
+        
+        if not email or not password:
+            raise HTTPException(status_code=400, 
+              detail="Email and password required")
+        
+        supabase = get_supabase_client()
+        response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        
+        if not response.session:
+            raise HTTPException(status_code=401,
+              detail="Invalid email or password")
+        
+        return {
+            "access_token": response.session.access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": response.user.id,
+                "email": response.user.email
+            }
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        print(f"[login] Error: {e}")
+        raise HTTPException(status_code=401,
+          detail=str(e))
 
-@router.post("/login", response_model=Token)
-async def login(
-    user_data: UserLogin,
-    supabase: Annotated[Client, Depends(get_supabase_client)]
-):
+@router.post("/register")
+async def register(request: Request):
     try:
-        auth_service = AuthService(supabase)
-        access_token = await auth_service.login_user(user_data)
-        return {"access_token": access_token, "token_type": "bearer"}
+        body = await request.json()
+        email = body.get("email", "")
+        password = body.get("password", "")
+        full_name = body.get("full_name", "")
+        
+        if not email or not password:
+            raise HTTPException(status_code=400,
+              detail="Email and password required")
+        
+        supabase = get_supabase_client()
+        response = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": {
+                "data": {"full_name": full_name}
+            }
+        })
+        
+        if not response.user:
+            raise HTTPException(status_code=400,
+              detail="Registration failed")
+        
+        # Auto sign in after register
+        login_response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        
+        if login_response.session:
+            return {
+                "access_token": login_response.session.access_token,
+                "token_type": "bearer",
+                "user": {
+                    "id": login_response.user.id,
+                    "email": login_response.user.email
+                }
+            }
+        
+        return {"message": "Account created. Please sign in."}
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        print(f"[register] Error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/me", response_model=UserInfo)
-async def read_users_me(
-    current_user: Annotated[UserInfo, Depends(get_current_user)]
-):
+@router.get("/me")
+async def read_users_me(current_user: dict = Depends(get_current_user)):
     return current_user
 
 @router.get("/test")
@@ -43,7 +98,7 @@ async def test():
     return {"status": "auth router working"}
 
 @router.post("/connect-ai")
-async def connect_ai(request: Request, current_user = Depends(get_current_user)):
+async def connect_ai(request: Request, current_user: dict = Depends(get_current_user)):
     print(f"[connect-ai] Called by user: {current_user}")
     try:
         body = await request.json()
@@ -52,7 +107,6 @@ async def connect_ai(request: Request, current_user = Depends(get_current_user))
         api_key = body.get("api_key", "")
         print(f"[connect-ai] Provider: {provider}")
         
-        from api.core.database import get_supabase_client
         supabase = get_supabase_client()
         print(f"[connect-ai] Supabase client obtained")
         

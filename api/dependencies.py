@@ -22,7 +22,8 @@ from typing import Annotated, Optional
 
 from fastapi import Depends, HTTPException, status as http_status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
+from jose import JWTError
 
 _JWT_SECRET = os.environ["SUPABASE_JWT_SECRET"]
 _ALGORITHM  = "HS256"

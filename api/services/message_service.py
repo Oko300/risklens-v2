@@ -68,14 +68,36 @@ async def run_best_tool(ticker: str, message: str) -> tuple:
         print(f"[bridge] register error: {e}")
         return f"Could not load tool: {e}", "error"
 
-    print(f"[bridge] registered tools: {list(mock._tools.keys())}")
+        registered_tool_names = list(mock._tools.keys())
+        print(f"[bridge] registered tools: {registered_tool_names}")
 
-    if not mock._tools:
-        return f"No tools found for {hint}", "error"
+        if not mock._tools:
+            return f"No tools found for {hint}", "error"
 
-    import inspect
-    name, func = next(iter(mock._tools.items()))
-    print(f"[bridge] calling {name}")
+        # Ensure only the intended tool is registered
+        if len(registered_tool_names) != 1:
+            print(f"[bridge] WARNING: Expected 1 tool, but found {len(registered_tool_names)}: {registered_tool_names}")
+            # Attempt to find the correct tool if multiple are registered
+            expected_tool_name = ""
+            if hint == "compare_filings":
+                expected_tool_name = "compare_filings"
+            elif hint == "risk_trends":
+                expected_tool_name = "risk_trends"
+            elif hint == "categorize_risks":
+                expected_tool_name = "categorize_risks"
+            else: # executive_report
+                expected_tool_name = "generate_executive_report"
+
+            if expected_tool_name in mock._tools:
+                name = expected_tool_name
+                func = mock._tools[expected_tool_name]
+                print(f"[bridge] Corrected to call {name}")
+            else:
+                return f"Could not find expected tool '{expected_tool_name}' among registered tools: {registered_tool_names}", "error"
+        else:
+            name, func = next(iter(mock._tools.items()))
+
+        print(f"[bridge] calling {name}")
 
     try:
         sig = inspect.signature(func)
@@ -156,11 +178,13 @@ Answer helpfully. If they mention a company suggest:
                     "Go to ⚙️ Settings → AI Connection and reconnect."
                 )
             else:
-                print(f"[grok] Error {response.status_code}: {response.text[:200]}")
-                return context if context else "AI unavailable. Please try again."
+                error_msg = f"Grok API Error {response.status_code}: {response.text[:200]}"
+                print(f"[grok] {error_msg}")
+                return error_msg if not context else f"{error_msg}\n\n**Raw filing data:**\n\n{context[:2000]}"
     except Exception as e:
-        print(f"[grok] Exception: {e}")
-        return context if context else "Network error. Please try again."
+        error_msg = f"Grok Exception: {e}"
+        print(f"[grok] {error_msg}")
+        return error_msg if not context else f"{error_msg}\n\n**Raw filing data:**\n\n{context[:2000]}"
 
 
 async def call_gemini(api_key: str, user_message: str,
@@ -196,10 +220,12 @@ Answer helpfully."""
                     data = response.json()
                     return data["candidates"][0]["content"]["parts"][0]["text"]
                 elif response.status_code == 429:
-                    print(f"[gemini] {model} quota exceeded")
+                    error_msg = f"Gemini API Error {model} quota exceeded"
+                    print(f"[gemini] {error_msg}")
                     continue
                 else:
-                    print(f"[gemini] {model} error: {response.status_code}")
+                    error_msg = f"Gemini API Error {model} {response.status_code}: {response.text[:200]}"
+                    print(f"[gemini] {error_msg}")
                     continue
 
         return (
@@ -211,8 +237,9 @@ Answer helpfully."""
             f"**Raw filing data:**\n\n{context[:2000]}"
         )
     except Exception as e:
-        print(f"[gemini] Exception: {e}")
-        return context if context else "Error. Please try again."
+        error_msg = f"Gemini Exception: {e}"
+        print(f"[gemini] {error_msg}")
+        return error_msg if not context else f"{error_msg}\n\n**Raw filing data:**\n\n{context[:2000]}"
 
 
 async def call_claude(api_key: str, user_message: str,
@@ -248,10 +275,13 @@ Respond helpfully and clearly."""
                     f"**Raw data:**\n\n{context[:2000]}"
                 )
             else:
-                return context if context else "AI unavailable."
+                error_msg = f"Claude API Error {response.status_code}: {response.text[:200]}"
+                print(f"[claude] {error_msg}")
+                return error_msg if not context else f"{error_msg}\n\n**Raw data:**\n\n{context[:2000]}"
     except Exception as e:
-        print(f"[claude] Exception: {e}")
-        return context if context else "Error."
+        error_msg = f"Claude Exception: {e}"
+        print(f"[claude] {error_msg}")
+        return error_msg if not context else f"{error_msg}\n\n**Raw data:**\n\n{context[:2000]}"
 
 
 async def process_message(user_id: str,

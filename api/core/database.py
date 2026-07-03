@@ -4,13 +4,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in the .env file")
-
+# Regular client for auth operations
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Service client for backend DB operations (bypasses RLS)
+supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
 def get_supabase_client() -> Client:
+    return supabase_admin
+
+def get_supabase_auth_client() -> Client:
     return supabase

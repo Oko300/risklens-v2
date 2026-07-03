@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
-from api.core.database import get_supabase_client
+from api.core.database import get_supabase_client, get_supabase_auth_client
 from api.core.dependencies import get_current_user
 
 router = APIRouter()
@@ -15,7 +15,7 @@ async def login(request: Request):
             raise HTTPException(status_code=400, 
               detail="Email and password required")
         
-        supabase = get_supabase_client()
+        supabase = get_supabase_auth_client()
         response = supabase.auth.sign_in_with_password({
             "email": email,
             "password": password
@@ -52,7 +52,7 @@ async def register(request: Request):
             raise HTTPException(status_code=400,
               detail="Email and password required")
         
-        supabase = get_supabase_client()
+        supabase = get_supabase_auth_client()
         response = supabase.auth.sign_up({
             "email": email,
             "password": password,

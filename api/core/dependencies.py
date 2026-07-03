@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jose import JWTError
 from pydantic import BaseModel
 from supabase import Client
 

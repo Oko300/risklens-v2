@@ -5,6 +5,29 @@ from api.core.database import get_supabase_client
 
 router = APIRouter()
 
+@router.post("/messages/test")
+async def test_message(request: Request):
+    try:
+        body = await request.json()
+        content = body.get("content", "Generate executive report for AAPL")
+        
+        from tools.executive_report import generate_executive_report
+        print(f"[test] Running tool for AAPL...")
+        result = generate_executive_report(ticker="AAPL", form_type="10-K")
+        print(f"[test] Tool result type: {type(result)}")
+        print(f"[test] Tool result preview: {str(result)[:200]}")
+        
+        return {
+            "tool_ran": True,
+            "result_type": str(type(result)),
+            "preview": str(result)[:500]
+        }
+    except Exception as e:
+        import traceback
+        print(f"[test] ERROR: {e}")
+        print(traceback.format_exc())
+        return {"error": str(e), "tool_ran": False}
+
 @router.post("/messages")
 async def send_message(
     request: Request,

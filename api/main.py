@@ -3,30 +3,23 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
-from api.routers import auth, conversations, messages, usage
+app = FastAPI(title="RiskLens")
 
-app = FastAPI(
-    title="RiskLens API",
-    description="API for RiskLens SaaS application",
-    version="2.0.0",
-)
-
-# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount routers
-app.include_router(auth.router, prefix="/api/auth")
-app.include_router(conversations.router, prefix="/api/conversations")
-app.include_router(messages.router, prefix="/api/messages")
-app.include_router(usage.router, prefix="/api/usage")
+from api.routers import auth, conversations, messages, usage
 
-# Health check
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(conversations.router, prefix="/api", tags=["conversations"])
+app.include_router(messages.router, prefix="/api", tags=["messages"])
+app.include_router(usage.router, prefix="/api", tags=["usage"])
+
 @app.get("/")
 async def root():
     frontend_path = os.path.join(
@@ -34,7 +27,7 @@ async def root():
     )
     if os.path.exists(frontend_path):
         return FileResponse(frontend_path)
-    return {"status": "ok", "app": "RiskLens"}
+    return {"status": "ok"}
 
 @app.get("/health")
 async def health():

@@ -1,22 +1,44 @@
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
-from supabase import Client
-
-from api.core.database import get_supabase_client
+from fastapi import APIRouter, HTTPException, Depends
 from api.core.dependencies import get_current_user
-from api.models.schemas import UsageInfo, UserInfo
-from api.services.usage_service import UsageService
+from api.core.database import get_supabase_client
 
 router = APIRouter()
 
-@router.get("/me", response_model=UsageInfo)
-async def get_my_usage(
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
-    supabase: Annotated[Client, Depends(get_supabase_client)]
-):
+@router.get("/usage/me")
+async def get_usage(current_user: dict = Depends(get_current_user)):
     try:
-        usage_service = UsageService(supabase)
-        usage_data = await usage_service.get_usage(current_user.id)
-        return UsageInfo(**usage_data)
+        supabase = get_supabase_client()
+        user_id = current_user["user_id"]
+        
+        result = supabase.table("user_plans").select("*").eq(
+            "user_id", user_id
+        ).execute()
+        
+        if not result.data:
+            supabase.table("user_plans").insert({
+                "user_id": user_id,
+                "plan": "free_trial",
+                "analyses_used": 0
+            }).execute()
+            return {
+                "plan": "free_trial",
+                "analyses_used": 0,
+                "limit": 10,
+                "days_remaining": 30
+            }
+        
+        data = result.data[0]
+        plan = data.get("plan", "free_trial")
+        used = data.get("analyses_used", 0)
+        limits = {"free_trial": 10, "pro": 500, "business": 999999}
+        limit = limits.get(plan, 10)
+        
+        return {
+            "plan": plan,
+            "analyses_used": used,
+            "limit": limit,
+            "days_remaining": 30
+        }
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        print(f"[usage] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

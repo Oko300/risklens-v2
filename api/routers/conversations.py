@@ -1,46 +1,56 @@
-from typing import Annotated, List
-from fastapi import APIRouter, Depends, HTTPException, status
-from supabase import Client
-import uuid
-
-from api.core.database import get_supabase_client
+from fastapi import APIRouter, HTTPException, Depends, Request
 from api.core.dependencies import get_current_user
-from api.models.schemas import ConversationCreate, Conversation, UserInfo
-from api.services.conversation_service import ConversationService
+from api.core.database import get_supabase_client
 
 router = APIRouter()
 
-@router.post("/", response_model=Conversation)
-async def create_new_conversation(
-    conversation_data: ConversationCreate,
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
-    supabase: Annotated[Client, Depends(get_supabase_client)]
+@router.post("/conversations")
+async def create_conversation(
+    request: Request,
+    current_user: dict = Depends(get_current_user)
 ):
     try:
-        conversation_service = ConversationService(supabase)
-        return await conversation_service.create_conversation(current_user.id, conversation_data)
+        body = await request.json()
+        title = body.get("title", "New Analysis")
+        supabase = get_supabase_client()
+        result = supabase.table("conversations").insert({
+            "user_id": current_user["user_id"],
+            "title": title
+        }).execute()
+        if result.data:
+            return result.data[0]
+        raise HTTPException(status_code=400, 
+          detail="Failed to create conversation")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        print(f"[conv] Create error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/", response_model=List[Conversation])
+@router.get("/conversations")
 async def list_conversations(
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
-    supabase: Annotated[Client, Depends(get_supabase_client)]
+    current_user: dict = Depends(get_current_user)
 ):
     try:
-        conversation_service = ConversationService(supabase)
-        return await conversation_service.get_conversations(current_user.id)
+        supabase = get_supabase_client()
+        result = supabase.table("conversations").select("*").eq(
+            "user_id", current_user["user_id"]
+        ).order("created_at", desc=True).execute()
+        return result.data or []
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        print(f"[conv] List error: {e}")
+        return []
 
-@router.delete("/{conversation_id}", response_model=dict)
-async def delete_single_conversation(
-    conversation_id: uuid.UUID,
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
-    supabase: Annotated[Client, Depends(get_supabase_client)]
+@router.delete("/conversations/{conv_id}")
+async def delete_conversation(
+    conv_id: str,
+    current_user: dict = Depends(get_current_user)
 ):
     try:
-        conversation_service = ConversationService(supabase)
-        return await conversation_service.delete_conversation(current_user.id, conversation_id)
+        supabase = get_supabase_client()
+        supabase.table("conversations").delete().eq(
+            "id", conv_id
+        ).eq("user_id", current_user["user_id"]).execute()
+        return {"deleted": True}
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

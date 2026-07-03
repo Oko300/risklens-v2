@@ -38,38 +38,35 @@ async def read_users_me(
 ):
     return current_user
 
+@router.get("/test")
+async def test():
+    return {"status": "auth router working"}
+
 @router.post("/connect-ai")
-async def connect_ai(
-    request: Request,
-    current_user = Depends(get_current_user)
-):
+async def connect_ai(request: Request, current_user = Depends(get_current_user)):
+    print(f"[connect-ai] Called by user: {current_user}")
     try:
         body = await request.json()
+        print(f"[connect-ai] Body received: {body}")
         provider = body.get("provider", "")
         api_key = body.get("api_key", "")
+        print(f"[connect-ai] Provider: {provider}")
         
-        if not provider or not api_key:
-            raise HTTPException(status_code=400, 
-              detail="Provider and api_key are required")
-        
-        # Save to Supabase user metadata
         from api.core.database import get_supabase_client
         supabase = get_supabase_client()
+        print(f"[connect-ai] Supabase client obtained")
         
-        # Store in a simple user_ai_keys table
-        # First try to upsert
         result = supabase.table("user_ai_keys").upsert({
-            "user_id": current_user["user_id"],
+            "user_id": str(current_user.get("user_id") or current_user.get("sub")),
             "provider": provider,
-            "api_key": api_key,
-            "updated_at": "now()"
+            "api_key": api_key
         }, on_conflict="user_id").execute()
+        print(f"[connect-ai] Upsert result: {result}")
         
         return {"success": True, "provider": provider}
         
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"Connect AI error: {e}")
-        raise HTTPException(status_code=500, 
-          detail=f"Failed to save AI key: {str(e)}")
+        import traceback
+        print(f"[connect-ai] ERROR: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))

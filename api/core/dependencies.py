@@ -55,7 +55,7 @@ async def get_current_user(
         plan_limit = usage_service.get_plan_limit(user_plan_data['plan'])
         days_remaining = (user_plan_data['period_end'] - datetime.now()).days
 
-        return UserInfo(
+        user_data = UserInfo(
             id=user.id,
             email=user.email,
             plan=user_plan_data['plan'],
@@ -64,6 +64,8 @@ async def get_current_user(
             days_remaining=days_remaining,
             ai_provider=user.user_metadata.get('ai_provider')
         )
+        print(f"[get_current_user] returning: {user_data}")
+        return user_data
     except Exception as e:
         print(f"Error fetching user or plan: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")

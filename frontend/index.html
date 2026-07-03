@@ -287,10 +287,10 @@ body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #ffffff; }
     <div id="aiKeyInputSection" style="display: none; margin-top: 20px;">
       <div class="form-group">
         <label id="aiKeyInputLabel">Enter your API Key</label>
-        <input type="password" id="aiApiKey" placeholder="sk-••••••••••••••••••••••••••••••••••••••••••••••••" oninput="document.getElementById('aiKeyError').style.display='none'">
+        <input type="password" id="aiApiKey" oninput="document.getElementById('aiSetupError').style.display='none'">
         <small style="color:#666;margin-top:4px">Your key is encrypted and never shared</small>
       </div>
-      <div class="error-msg" id="aiKeyError" style="display: none;"></div>
+      <div class="error-msg" id="aiSetupError" style="display: none;"></div>
       <button class="btn-submit" onclick="saveAiKey()" style="margin-top: 20px;">Save & Continue</button>
       <a id="getApiKeyLink" href="#" target="_blank" style="display: block; text-align: center; color: #2563eb; margin-top: 15px; font-size: 14px;">Get API Key →</a>
     </div>
@@ -405,12 +405,12 @@ function showDashboard() {
   }
 }
 
-let currentAiProvider = '';
+let selectedProvider = ''; // Renamed from currentAiProvider for clarity
 
 function openAiSetupModal() {
   document.getElementById('aiSetupModal').classList.add('active');
   document.getElementById('aiKeyInputSection').style.display = 'none';
-  document.getElementById('aiKeyError').style.display = 'none';
+  document.getElementById('aiSetupError').style.display = 'none';
 }
 
 function closeAiSetupModal() {
@@ -418,15 +418,23 @@ function closeAiSetupModal() {
 }
 
 function showAiKeyInput(provider) {
-  currentAiProvider = provider;
+  selectedProvider = provider;
   const label = document.getElementById('aiKeyInputLabel');
   const link = document.getElementById('getApiKeyLink');
+  const apiKeyInput = document.getElementById('aiApiKey');
   document.getElementById('aiKeyInputSection').style.display = 'block';
-  document.getElementById('aiApiKey').value = '';
-  document.getElementById('aiKeyError').style.display = 'none';
+  apiKeyInput.value = '';
+  document.getElementById('aiSetupError').style.display = 'none';
 
   let providerName = '';
   let providerLink = '#';
+  const placeholders = {
+    grok: 'xai-xxxxxxxxxxxxxxxxxxxxxxxxxx',
+    claude: 'sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxx',
+    gemini: 'AIzaSy-xxxxxxxxxxxxxxxxxxxxxxxxxx'
+  };
+  apiKeyInput.placeholder = placeholders[provider] || 'Enter API key';
+
   if (provider === 'grok') {
     providerName = 'Grok (xAI)';
     providerLink = 'https://console.x.ai';
@@ -443,7 +451,7 @@ function showAiKeyInput(provider) {
 
 async function saveAiKey() {
   const apiKey = document.getElementById('aiApiKey').value.trim();
-  const errEl = document.getElementById('aiKeyError');
+  const errEl = document.getElementById('aiSetupError');
   errEl.style.display = 'none';
 
   if (!apiKey) {
@@ -452,26 +460,52 @@ async function saveAiKey() {
     return;
   }
 
+  const currentToken = localStorage.getItem('rl_token');
+  if (!currentToken) {
+    errEl.textContent = 'Session expired. Please sign in again.';
+    errEl.style.display = 'block';
+    setTimeout(() => { 
+      document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('landing').style.display = 'block';
+      openModal('login'); 
+    }, 1500);
+    return;
+  }
+
   try {
     const res = await fetch(API + '/api/auth/connect-ai', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
+        'Authorization': 'Bearer ' + currentToken
       },
-      body: JSON.stringify({ provider: currentAiProvider, api_key: apiKey })
+      body: JSON.stringify({ provider: selectedProvider, api_key: apiKey })
     });
-    const data = await res.json();
-    if (!res.ok) {
-      errEl.textContent = data.detail || 'Failed to connect AI key.';
+
+    if (res.status === 401) {
+      localStorage.removeItem('rl_token');
+      token = null; // Update local token variable
+      errEl.textContent = 'Session expired. Signing you in again...';
       errEl.style.display = 'block';
-    } else {
+      setTimeout(() => {
+        document.getElementById('dashboard').style.display = 'none';
+        document.getElementById('landing').style.display = 'block';
+        openModal('login');
+      }, 1500);
+      return;
+    }
+
+    if (res.ok) {
       localStorage.setItem('rl_ai_connected', 'true');
-      localStorage.setItem('rl_ai_provider', currentAiProvider);
+      localStorage.setItem('rl_ai_provider', selectedProvider);
       rl_ai_connected = true;
-      rl_ai_provider = currentAiProvider;
+      rl_ai_provider = selectedProvider;
       closeAiSetupModal();
       showDashboard(); // Re-render dashboard to show chat
+    } else {
+      const data = await res.json();
+      errEl.textContent = data.detail || 'Failed to save key. Try again.';
+      errEl.style.display = 'block';
     }
   } catch(e) {
     errEl.textContent = 'Network error. Could not connect AI key.';

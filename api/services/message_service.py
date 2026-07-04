@@ -15,23 +15,41 @@ def extract_ticker(text: str) -> str:
         "CAN","SEC","CEO","CFO","AI","ML","API","USD","UK","EU",
         "GDP","IPO","ETF","GENERATE","REPORT","ANALYZE","COMPARE",
         "SHOW","WHAT","HOW","WHY","WHEN","WHO","TELL","GIVE","RISK",
-        "TREND","FILING","ANNUAL","QUARTER","EXECUTIVE","LATEST",
-        "HI","HELLO","HEY","PLEASE","THANKS","THANK","YES","NO"
+        "RISKS","TREND","TRENDS","FILING","ANNUAL","QUARTER","EXECUTIVE",
+        "LATEST","HI","HELLO","HEY","PLEASE","THANKS","THANK","YES","NO",
+        "TWO","LAST","OVER","TIME","DATA","NEWS","INFO","ABOUT","WITH",
+        "FROM","YOUR","THEIR","ITS","HAS","HAVE","HAD","ARE","WAS","WERE",
+        "CATEGORIZE","BREAKDOWN","TYPES","DOMAIN","CLASSIFY","CATEGORIES",
+        "HISTORY","YEARS","PAST","TRAJECTORY","HISTORICALLY","DIFFERENCE",
+        "VERSUS","BOTH","FILINGS","LATEST","RECENT","NEW","OLD"
     }
-    words = text.upper().split()
+    # Strip markdown symbols and quotes from the text before processing
+    clean_text = re.sub(r'[*"\'`#]', ' ', text)
+    words = clean_text.upper().split()
     for word in words:
+        # Remove non-alpha characters (handles apostrophes like MSFT's -> MSFT)
         clean = re.sub(r"[^A-Z]", "", word)
         if 2 <= len(clean) <= 5 and clean not in skip:
             return clean
     return ""
 
 
-def is_greeting_or_general(text: str) -> bool:
-    """Detect if message is a greeting or general question with no filing intent."""
-    greetings = ["hi", "hello", "hey", "good morning", "good evening",
-                 "what can you do", "help", "how does this work", "what is risklens"]
+def is_greeting_or_general(text: str, ticker: str) -> bool:
+    """Only treat as greeting if there is no ticker AND message is very short/generic."""
+    # If a ticker was found, never treat as greeting
+    if ticker:
+        return False
+    greetings = [
+        "hi", "hello", "hey", "good morning", "good evening",
+        "what can you do", "help me", "how does this work",
+        "what is risklens", "what are you", "who are you"
+    ]
     msg = text.lower().strip()
-    return any(msg.startswith(g) for g in greetings) or len(msg.split()) < 4
+    # Only greeting if it matches a known phrase OR is very short with no company context
+    is_short_generic = len(msg.split()) <= 3 and not any(
+        w in msg for w in ["analyz", "compar", "risk", "filing", "report", "trend"]
+    )
+    return any(msg.startswith(g) for g in greetings) or is_short_generic
 
 
 FRIENDLY_INTRO = """👋 Hi! I'm **RiskLens**, your AI-powered SEC filing analyst.
@@ -106,6 +124,7 @@ Respond clearly and conversationally. Highlight key risks and what they mean for
             prompt = f"""You are RiskLens, a friendly AI financial analyst. The user said: "{user_message}". Help them out warmly."""
 
         models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        last_error = ""
         for model in models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             async with httpx.AsyncClient(timeout=90.0) as client:
@@ -116,13 +135,32 @@ Respond clearly and conversationally. Highlight key risks and what they mean for
                 if response.status_code == 200:
                     return response.json()["candidates"][0]["content"]["parts"][0]["text"]
                 elif response.status_code == 429:
+                    last_error = "quota"
                     print(f"[gemini] {model} quota exceeded, trying next")
                     continue
+                elif response.status_code == 403:
+                    last_error = "forbidden"
+                    print(f"[gemini] {model} 403 forbidden - key may be invalid or API not enabled")
+                    continue
                 else:
+                    last_error = f"{response.status_code}"
                     print(f"[gemini] {model} error {response.status_code}: {response.text[:200]}")
                     continue
-        return ("⚠️ **Gemini API quota reached.**\n\nGo to ⚙️ Settings → AI Connection and update your key.\n\n"
-                + (f"**Raw data:**\n\n{context[:2000]}" if context else ""))
+
+        if last_error == "quota":
+            return ("⚠️ **Gemini API quota reached.**\n\nGo to ⚙️ Settings → AI Connection and update your key, "
+                    "or get a new one at https://aistudio.google.com\n\n"
+                    + (f"**Raw filing data:**\n\n{context[:2000]}" if context else ""))
+        elif last_error == "forbidden":
+            return ("❌ **Gemini API key error (403 Forbidden).**\n\n"
+                    "This usually means:\n"
+                    "• Your API key doesn't have the Generative Language API enabled\n"
+                    "• Go to https://aistudio.google.com and generate a fresh key\n"
+                    "• Then update it in ⚙️ Settings → AI Connection\n\n"
+                    + (f"**Raw filing data:**\n\n{context[:2000]}" if context else ""))
+        else:
+            return ("❌ **Gemini API error.**\n\nGo to ⚙️ Settings → AI Connection and reconnect.\n\n"
+                    + (f"**Raw filing data:**\n\n{context[:2000]}" if context else ""))
     except Exception as e:
         print(f"[gemini] exception: {e}")
         return f"Gemini error: {e}" + (f"\n\n**Raw data:**\n\n{context[:2000]}" if context else "")
@@ -181,8 +219,12 @@ async def process_message(user_id: str, conversation_id: str, content: str) -> d
     except Exception as e:
         print(f"[process] save user msg error: {e}")
 
-    # Handle greetings without calling any tool
-    if is_greeting_or_general(content):
+    # Extract ticker FIRST before any other decision
+    ticker = extract_ticker(content)
+    print(f"[process] ticker: '{ticker}'")
+
+    # Handle greetings only when no ticker found
+    if is_greeting_or_general(content, ticker):
         ai_response = FRIENDLY_INTRO
         try:
             supabase.table("messages").insert({
@@ -197,11 +239,7 @@ async def process_message(user_id: str, conversation_id: str, content: str) -> d
             print(f"[process] save greeting response error: {e}")
         return {"content": ai_response, "tool_used": None, "ticker": None}
 
-    # Extract ticker
-    ticker = extract_ticker(content)
-    print(f"[process] ticker: '{ticker}'")
-
-    # Always fetch fresh AI key from DB (catches key changes)
+    # Always fetch fresh AI key from DB on every message
     ai_key = None
     ai_provider = None
     try:
@@ -213,14 +251,14 @@ async def process_message(user_id: str, conversation_id: str, content: str) -> d
     except Exception as e:
         print(f"[process] key fetch error: {e}")
 
-    # Run tool only if ticker found
+    # Run exactly one tool if ticker found
     tool_result = ""
     tool_name = None
     if ticker:
         tool_result, tool_name = await run_best_tool(ticker, content)
         print(f"[process] tool={tool_name} result_len={len(tool_result)}")
 
-    # Call AI provider with fresh key
+    # Call AI provider with fresh key and tool result as context
     if ai_key:
         if ai_provider == "grok":
             ai_response = await call_grok(ai_key, content, tool_result, ticker)
@@ -233,7 +271,7 @@ async def process_message(user_id: str, conversation_id: str, content: str) -> d
     elif tool_result and tool_name != "error":
         ai_response = tool_result
     elif ticker and not ai_key:
-        ai_response = (f"I found filing data for **{ticker}** but you haven't connected an AI provider yet.\n\n"
+        ai_response = (f"I pulled filing data for **{ticker}** but you haven't connected an AI provider yet.\n\n"
                        "Go to ⚙️ Settings → AI Connection to add your Grok, Gemini, or Claude key.")
     else:
         ai_response = FRIENDLY_INTRO

@@ -155,10 +155,17 @@ Respond clearly and conversationally. Highlight key risks and what they mean for
 
         models = ["gemini-2.0-flash", "gemini-1.5-flash"]
         last_error = ""
+        # Support both AIza (API key) and AQ. (OAuth2 bearer) key formats
+        use_bearer = api_key.startswith("AQ.")
         for model in models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            if use_bearer:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            else:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                headers = {"Content-Type": "application/json"}
             async with httpx.AsyncClient(timeout=90.0) as client:
-                response = await client.post(url, json={
+                response = await client.post(url, headers=headers, json={
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048}
                 })

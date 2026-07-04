@@ -75,8 +75,8 @@ async def connect_ai(request: Request, current_user: dict = Depends(get_current_
         # Validate key format per provider
         if provider == "grok" and not api_key.startswith("xai-"):
             raise HTTPException(status_code=400, detail="Grok keys must start with xai-")
-        if provider == "gemini" and not api_key.startswith("AIza"):
-            raise HTTPException(status_code=400, detail="Gemini keys must start with AIza")
+        if provider == "gemini" and not (api_key.startswith("AIza") or api_key.startswith("AQ.")):
+            raise HTTPException(status_code=400, detail="Gemini keys must start with AIza or AQ.")
         if provider == "claude" and not api_key.startswith("sk-ant-"):
             raise HTTPException(status_code=400, detail="Claude keys must start with sk-ant-")
 

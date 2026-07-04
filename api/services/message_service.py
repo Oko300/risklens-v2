@@ -1,161 +1,73 @@
 import re
 import json
 import httpx
-import inspect # Added import for inspect
+import inspect
 from api.core.database import get_supabase_client
 from api.services.usage_service import UsageService
+from api.services.tool_bridge import run_best_tool, get_tool_hint
 
 
 def extract_ticker(text: str) -> str:
+    """Extract a stock ticker from user message. Returns empty string if none found."""
     skip = {
         "I","A","AN","THE","FOR","OF","AND","OR","IN","ON","AT",
         "TO","IS","IT","BE","MY","ME","WE","US","DO","GO","GET",
         "CAN","SEC","CEO","CFO","AI","ML","API","USD","UK","EU",
         "GDP","IPO","ETF","GENERATE","REPORT","ANALYZE","COMPARE",
         "SHOW","WHAT","HOW","WHY","WHEN","WHO","TELL","GIVE","RISK",
-        "TREND","FILING","ANNUAL","QUARTER","EXECUTIVE","LATEST"
+        "TREND","FILING","ANNUAL","QUARTER","EXECUTIVE","LATEST",
+        "HI","HELLO","HEY","PLEASE","THANKS","THANK","YES","NO"
     }
     words = text.upper().split()
     for word in words:
-        clean = re.sub(r'[^A-Z]', '', word)
+        clean = re.sub(r"[^A-Z]", "", word)
         if 2 <= len(clean) <= 5 and clean not in skip:
             return clean
     return ""
 
 
-def get_tool_hint(message: str) -> str:
-    msg = message.lower()
-    if any(w in msg for w in ["compare","vs","versus","difference","last two"]):
-        return "compare_filings"
-    elif any(w in msg for w in ["trend","history","years","over time","past","trajectory"]):
-        return "risk_trends"
-    elif any(w in msg for w in ["categor","breakdown","types","domain","classify"]):
-        return "categorize_risks"
-    else:
-        return "executive_report"
+def is_greeting_or_general(text: str) -> bool:
+    """Detect if message is a greeting or general question with no filing intent."""
+    greetings = ["hi", "hello", "hey", "good morning", "good evening",
+                 "what can you do", "help", "how does this work", "what is risklens"]
+    msg = text.lower().strip()
+    return any(msg.startswith(g) for g in greetings) or len(msg.split()) < 4
 
 
-class MockMCP:
-    def __init__(self):
-        self._tools = {}
-    def tool(self):
-        parent = self
-        class Dec:
-            def __call__(self, f):
-                parent._tools[f.__name__] = f
-                return f
-        return Dec()
+FRIENDLY_INTRO = """👋 Hi! I'm **RiskLens**, your AI-powered SEC filing analyst.
+
+Here's what I can do for you:
+
+📊 **Analyze a company** — *"Analyze AAPL"* or *"Give me a risk report on TSLA"*
+🔍 **Compare filings** — *"Compare MSFT's last two filings"*
+📈 **Risk trends** — *"Show AMZN risk trends over time"*
+🗂 **Risk breakdown** — *"Categorize risks for NVDA"*
+
+Just mention a stock ticker and I'll pull the latest SEC data for you!"""
 
 
-async def run_best_tool(ticker: str, message: str) -> tuple:
-    hint = get_tool_hint(message)
-    print(f"[bridge] hint={hint} ticker={ticker}")
-
-    mock = MockMCP()
-
-    try:
-        if hint == "compare_filings":
-            from tools.compare_filings import register_compare_filings
-            register_compare_filings(mock)
-        elif hint == "risk_trends":
-            from tools.risk_trends import register_risk_trends
-            register_risk_trends(mock)
-        elif hint == "categorize_risks":
-            from tools.risk_categorizer import register_risk_categorizer
-            register_risk_categorizer(mock)
-        else:
-            from tools.executive_report import register_executive_report
-            register_executive_report(mock)
-    except Exception as e:
-        print(f"[bridge] register error: {e}")
-        return f"Could not load tool: {e}", "error"
-
-    # The following lines were incorrectly indented and effectively commented out.
-    # They are crucial for tool execution.
-    registered_tool_names = list(mock._tools.keys())
-    print(f"[bridge] registered tools: {registered_tool_names}")
-
-    if not mock._tools:
-        return f"No tools found for {hint}", "error"
-
-    # Ensure only the intended tool is registered
-    if len(registered_tool_names) != 1:
-        print(f"[bridge] WARNING: Expected 1 tool, but found {len(registered_tool_names)}: {registered_tool_names}")
-        # Attempt to find the correct tool if multiple are registered
-        expected_tool_name = ""
-        if hint == "compare_filings":
-            expected_tool_name = "compare_filings"
-        elif hint == "risk_trends":
-            expected_tool_name = "risk_trends"
-        elif hint == "categorize_risks":
-            expected_tool_name = "categorize_risks"
-        else: # executive_report
-            expected_tool_name = "generate_executive_report"
-
-        if expected_tool_name in mock._tools:
-            name = expected_tool_name
-            func = mock._tools[expected_tool_name]
-            print(f"[bridge] Corrected to call {name}")
-        else:
-            return f"Could not find expected tool '{expected_tool_name}' among registered tools: {registered_tool_names}", "error"
-    else:
-        name, func = next(iter(mock._tools.items()))
-
-    print(f"[bridge] calling {name}")
-
-    try:
-        sig = inspect.signature(func)
-        params = list(sig.parameters.keys())
-        print(f"[bridge] params: {params}")
-
-        if 'ticker' in params and 'form_type' in params:
-            result = await func(ticker=ticker, form_type="10-K")
-        elif 'ticker' in params:
-            result = await func(ticker=ticker)
-        elif len(params) >= 1:
-            result = await func(ticker)
-        else:
-            result = await func()
-
-        if isinstance(result, dict):
-            return json.dumps(result, indent=2), name
-        return str(result), name
-
-    except Exception as e:
-        import traceback
-        print(f"[bridge] call error: {e}")
-        print(traceback.format_exc())
-        return f"Tool error: {e}", "error"
-
-
-async def call_grok(api_key: str, user_message: str,
-                    context: str, ticker: str = "") -> str:
+async def call_grok(api_key: str, user_message: str, context: str, ticker: str = "") -> str:
     try:
         if ticker and context:
-            prompt = f"""You are RiskLens, an expert AI financial analyst.
+            prompt = f"""You are RiskLens, a friendly and expert AI financial analyst helping investors understand SEC filings.
 
-User asked: "{user_message}"
+The user asked: "{user_message}"
 
-SEC filing analysis for {ticker}:
+Here is the SEC filing analysis for {ticker}:
 {context[:3000]}
 
-Respond as an expert analyst. Be clear, insightful and conversational.
-Highlight the most important findings and what they mean for investors."""
+Respond in a clear, friendly, and insightful way. Highlight the most important findings and what they mean for investors. Use bullet points where helpful."""
         else:
-            prompt = f"""You are RiskLens, an expert AI financial analyst.
+            prompt = f"""You are RiskLens, a friendly AI financial analyst.
 
-User asked: "{user_message}"
+The user said: "{user_message}"
 
-Answer helpfully. If they mention a company suggest:
-"Try: Analyze AAPL or Compare TSLA filings" """
+Help them out warmly. If they mention a company, suggest they provide a ticker like AAPL or TSLA so you can pull the SEC filing data."""
 
         async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.post(
                 "https://api.x.ai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={
                     "model": "grok-3-mini",
                     "messages": [{"role": "user", "content": prompt}],
@@ -164,95 +76,66 @@ Answer helpfully. If they mention a company suggest:
                 }
             )
             if response.status_code == 200:
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
+                return response.json()["choices"][0]["message"]["content"]
             elif response.status_code == 429:
-                return (
-                    "⚠️ **API Quota Limit Reached**\n\n"
-                    "Your Grok API key has hit its usage limit.\n\n"
-                    "**What to do:**\n"
-                    "• Go to ⚙️ Settings → AI Connection → Change Provider\n"
-                    "• Or wait for your quota to reset\n\n"
-                    f"**Raw filing data:**\n\n{context[:2000]}"
-                )
+                return ("⚠️ **Grok API quota reached.**\n\nGo to ⚙️ Settings → AI Connection and update your key.\n\n"
+                        + (f"**Raw filing data:**\n\n{context[:2000]}" if context else ""))
             elif response.status_code == 401:
-                return (
-                    "❌ **Invalid API Key**\n\n"
-                    "Your Grok API key is invalid.\n"
-                    "Go to ⚙️ Settings → AI Connection and reconnect."
-                )
+                return "❌ **Invalid Grok API key.** Go to ⚙️ Settings → AI Connection and reconnect."
             else:
-                error_msg = f"Grok API Error {response.status_code}: {response.text[:200]}"
-                print(f"[grok] {error_msg}")
-                return error_msg if not context else f"{error_msg}\n\n**Raw filing data:**\n\n{context[:2000]}"
+                err = f"Grok error {response.status_code}: {response.text[:200]}"
+                print(f"[grok] {err}")
+                return err + (f"\n\n**Raw data:**\n\n{context[:2000]}" if context else "")
     except Exception as e:
-        error_msg = f"Grok Exception: {e}"
-        print(f"[grok] {error_msg}")
-        return error_msg if not context else f"{error_msg}\n\n**Raw filing data:**\n\n{context[:2000]}"
+        print(f"[grok] exception: {e}")
+        return f"Grok connection error: {e}" + (f"\n\n**Raw data:**\n\n{context[:2000]}" if context else "")
 
 
-async def call_gemini(api_key: str, user_message: str,
-                      context: str, ticker: str = "") -> str:
+async def call_gemini(api_key: str, user_message: str, context: str, ticker: str = "") -> str:
     try:
         if ticker and context:
-            prompt = f"""You are RiskLens, an expert AI financial analyst.
+            prompt = f"""You are RiskLens, a friendly and expert AI financial analyst.
 
-User asked: "{user_message}"
+The user asked: "{user_message}"
 
 SEC filing analysis for {ticker}:
 {context[:3000]}
 
-Respond as an expert analyst. Be clear and conversational."""
+Respond clearly and conversationally. Highlight key risks and what they mean for investors."""
         else:
-            prompt = f"""You are RiskLens financial analyst.
-User asked: "{user_message}"
-Answer helpfully."""
+            prompt = f"""You are RiskLens, a friendly AI financial analyst. The user said: "{user_message}". Help them out warmly."""
 
         models = ["gemini-2.0-flash", "gemini-1.5-flash"]
         for model in models:
-            url = (f"https://generativelanguage.googleapis.com/v1beta"
-                   f"/models/{model}:generateContent?key={api_key}")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(url, json={
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "maxOutputTokens": 2048
-                    }
+                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048}
                 })
                 if response.status_code == 200:
-                    data = response.json()
-                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
                 elif response.status_code == 429:
-                    error_msg = f"Gemini API Error {model} quota exceeded"
-                    print(f"[gemini] {error_msg}")
+                    print(f"[gemini] {model} quota exceeded, trying next")
                     continue
                 else:
-                    error_msg = f"Gemini API Error {model} {response.status_code}: {response.text[:200]}"
-                    print(f"[gemini] {error_msg}")
+                    print(f"[gemini] {model} error {response.status_code}: {response.text[:200]}")
                     continue
-
-        return (
-            "⚠️ **API Quota Limit Reached**\n\n"
-            "Your Gemini API key has hit its daily limit.\n\n"
-            "**What to do:**\n"
-            "• Go to ⚙️ Settings → AI Connection → Change Provider\n"
-            "• Get a new key at https://aistudio.google.com\n\n"
-            f"**Raw filing data:**\n\n{context[:2000]}"
-        )
+        return ("⚠️ **Gemini API quota reached.**\n\nGo to ⚙️ Settings → AI Connection and update your key.\n\n"
+                + (f"**Raw data:**\n\n{context[:2000]}" if context else ""))
     except Exception as e:
-        error_msg = f"Gemini Exception: {e}"
-        print(f"[gemini] {error_msg}")
-        return error_msg if not context else f"{error_msg}\n\n**Raw filing data:**\n\n{context[:2000]}"
+        print(f"[gemini] exception: {e}")
+        return f"Gemini error: {e}" + (f"\n\n**Raw data:**\n\n{context[:2000]}" if context else "")
 
 
-async def call_claude(api_key: str, user_message: str,
-                      context: str, ticker: str = "") -> str:
+async def call_claude(api_key: str, user_message: str, context: str, ticker: str = "") -> str:
     try:
-        prompt = f"""You are RiskLens financial analyst.
-User asked: "{user_message}"
-{"SEC filing data for " + ticker + ": " + context[:3000] if context else ""}
-Respond helpfully and clearly."""
+        prompt = f"""You are RiskLens, a friendly and expert AI financial analyst.
+
+The user asked: "{user_message}"
+{"SEC filing data for " + ticker + ": " + context[:3000] if context else "Help the user warmly and suggest they provide a ticker symbol."}
+
+Respond clearly, helpfully, and in a friendly tone."""
 
         async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.post(
@@ -269,32 +152,25 @@ Respond helpfully and clearly."""
                 }
             )
             if response.status_code == 200:
-                data = response.json()
-                return data["content"][0]["text"]
+                return response.json()["content"][0]["text"]
             elif response.status_code == 429:
-                return (
-                    "⚠️ **API Quota Limit Reached**\n\n"
-                    "Your Claude API key has hit its limit.\n"
-                    "Go to ⚙️ Settings → AI Connection → Change Provider.\n\n"
-                    f"**Raw data:**\n\n{context[:2000]}"
-                )
+                return ("⚠️ **Claude API quota reached.**\n\nGo to ⚙️ Settings → AI Connection and update your key.\n\n"
+                        + (f"**Raw data:**\n\n{context[:2000]}" if context else ""))
             else:
-                error_msg = f"Claude API Error {response.status_code}: {response.text[:200]}"
-                print(f"[claude] {error_msg}")
-                return error_msg if not context else f"{error_msg}\n\n**Raw data:**\n\n{context[:2000]}"
+                err = f"Claude error {response.status_code}: {response.text[:200]}"
+                print(f"[claude] {err}")
+                return err + (f"\n\n**Raw data:**\n\n{context[:2000]}" if context else "")
     except Exception as e:
-        error_msg = f"Claude Exception: {e}"
-        print(f"[claude] {error_msg}")
-        return error_msg if not context else f"{error_msg}\n\n**Raw data:**\n\n{context[:2000]}"
+        print(f"[claude] exception: {e}")
+        return f"Claude error: {e}" + (f"\n\n**Raw data:**\n\n{context[:2000]}" if context else "")
 
 
-async def process_message(user_id: str,
-                          conversation_id: str,
-                          content: str) -> dict:
+async def process_message(user_id: str, conversation_id: str, content: str) -> dict:
     supabase = get_supabase_client()
-    usage_service = UsageService(supabase) # Instantiate UsageService
+    usage_service = UsageService(supabase)
     print(f"[process] user:{user_id} msg:{content[:60]}")
 
+    # Save user message
     try:
         supabase.table("messages").insert({
             "conversation_id": conversation_id,
@@ -305,29 +181,46 @@ async def process_message(user_id: str,
     except Exception as e:
         print(f"[process] save user msg error: {e}")
 
+    # Handle greetings without calling any tool
+    if is_greeting_or_general(content):
+        ai_response = FRIENDLY_INTRO
+        try:
+            supabase.table("messages").insert({
+                "conversation_id": conversation_id,
+                "user_id": user_id,
+                "role": "assistant",
+                "content": ai_response,
+                "tool_used": None,
+                "ticker": None
+            }).execute()
+        except Exception as e:
+            print(f"[process] save greeting response error: {e}")
+        return {"content": ai_response, "tool_used": None, "ticker": None}
+
+    # Extract ticker
     ticker = extract_ticker(content)
     print(f"[process] ticker: '{ticker}'")
 
+    # Always fetch fresh AI key from DB (catches key changes)
     ai_key = None
     ai_provider = None
     try:
-        key_result = supabase.table("user_ai_keys").select(
-            "provider,api_key"
-        ).eq("user_id", user_id).execute()
+        key_result = supabase.table("user_ai_keys").select("provider,api_key").eq("user_id", user_id).execute()
         if key_result.data:
             ai_provider = key_result.data[0]["provider"]
             ai_key = key_result.data[0]["api_key"]
-            print(f"[process] using {ai_provider}")
+            print(f"[process] loaded {ai_provider} key ending ...{ai_key[-6:] if ai_key else 'none'}")
     except Exception as e:
         print(f"[process] key fetch error: {e}")
 
+    # Run tool only if ticker found
     tool_result = ""
     tool_name = None
-
     if ticker:
         tool_result, tool_name = await run_best_tool(ticker, content)
         print(f"[process] tool={tool_name} result_len={len(tool_result)}")
 
+    # Call AI provider with fresh key
     if ai_key:
         if ai_provider == "grok":
             ai_response = await call_grok(ai_key, content, tool_result, ticker)
@@ -336,17 +229,16 @@ async def process_message(user_id: str,
         elif ai_provider == "claude":
             ai_response = await call_claude(ai_key, content, tool_result, ticker)
         else:
-            ai_response = tool_result or "Please connect an AI provider in Settings."
-    elif tool_result:
+            ai_response = tool_result or "Please connect an AI provider in ⚙️ Settings."
+    elif tool_result and tool_name != "error":
         ai_response = tool_result
+    elif ticker and not ai_key:
+        ai_response = (f"I found filing data for **{ticker}** but you haven't connected an AI provider yet.\n\n"
+                       "Go to ⚙️ Settings → AI Connection to add your Grok, Gemini, or Claude key.")
     else:
-        ai_response = (
-            "Hi! I'm RiskLens, your AI financial analyst. "
-            "Ask me about any company's SEC filings!\n\n"
-            "Try:\n• 'Analyze AAPL'\n• 'Compare TSLA filings'\n"
-            "• 'What are MSFT risk trends?'"
-        )
+        ai_response = FRIENDLY_INTRO
 
+    # Save assistant response
     try:
         supabase.table("messages").insert({
             "conversation_id": conversation_id,
@@ -359,16 +251,10 @@ async def process_message(user_id: str,
     except Exception as e:
         print(f"[process] save response error: {e}")
 
-    # Increment usage after successful message processing/tool execution
+    # Increment usage
     try:
         await usage_service.increment_usage(user_id)
     except Exception as e:
-        print(f"[process] Failed to increment usage for user {user_id}: {e}")
-        # Do not raise HTTPException here, as the message was already processed.
-        # The usage limit check happens before this in the dependency.
+        print(f"[process] usage increment error: {e}")
 
-    return {
-        "content": ai_response,
-        "tool_used": tool_name,
-        "ticker": ticker or None
-    }
+    return {"content": ai_response, "tool_used": tool_name, "ticker": ticker or None}

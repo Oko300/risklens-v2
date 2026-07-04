@@ -1,9 +1,9 @@
 import os
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 from supabase import Client
 from passlib.context import CryptContext
+import jwt # Added import for jwt
 
 from api.models.schemas import UserRegister, UserLogin, ConnectAI
 from api.core.database import get_supabase_client
@@ -13,7 +13,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 30 # Changed from minutes to days
+ACCESS_TOKEN_EXPIRE_DAYS = 30
 
 class AuthService:
     def __init__(self, supabase: Client):
@@ -25,7 +25,7 @@ class AuthService:
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS) # Changed to days
+            expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
@@ -38,7 +38,6 @@ class AuthService:
             })
             user = response.user
             if user:
-                # Create a default free trial plan for the new user
                 await self.usage_service._create_default_plan(user.id)
                 return {"message": "User registered successfully. Please check your email to verify your account."}
             raise Exception("User registration failed.")
@@ -54,7 +53,7 @@ class AuthService:
             })
             user = response.user
             if user:
-                access_token_expires = timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS) # Changed to days
+                access_token_expires = timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
                 access_token = self.create_access_token(
                     data={"sub": str(user.id)}, expires_delta=access_token_expires
                 )
@@ -66,16 +65,26 @@ class AuthService:
 
     async def connect_ai_provider(self, user_id: str, ai_data: ConnectAI) -> dict:
         try:
-            # Supabase user metadata is a JSONB column, so we can store provider and encrypted key
-            # For simplicity, we're not encrypting the key here, but in a real app, you should.
-            # You would use a proper encryption service for the API key.
-            response = self.supabase.auth.update_user(
-                user_id,
-                user_metadata={"ai_provider": ai_data.provider, "ai_api_key": ai_data.api_key}
-            )
-            if response.user:
-                return {"message": "AI provider connected successfully."}
-            raise Exception("Failed to connect AI provider.")
+            # Check if an entry already exists for the user in user_ai_keys
+            existing_key, count = await self.supabase.from_("user_ai_keys").select(
+                "id"
+            ).eq("user_id", user_id).execute()
+
+            if existing_key.data:
+                # Update existing entry
+                await self.supabase.from_("user_ai_keys").update({
+                    "provider": ai_data.provider,
+                    "api_key": ai_data.api_key
+                }).eq("user_id", user_id).execute()
+            else:
+                # Insert new entry
+                await self.supabase.from_("user_ai_keys").insert({
+                    "user_id": user_id,
+                    "provider": ai_data.provider,
+                    "api_key": ai_data.api_key
+                }).execute()
+            
+            return {"message": "AI provider connected successfully."}
         except Exception as e:
             print(f"Error connecting AI provider for user {user_id}: {e}")
             raise

@@ -316,36 +316,55 @@ def _categorize(risk_text: str) -> list[RiskCategoryDetail]:
     results: list[RiskCategoryDetail] = []
 
     for domain_key, spec in RISK_TAXONOMY.items():
-        matched_signals: list[str] = []
-        excerpts: list[str]        = []
-        seen_excerpts              = set()
+        # Collect all sentences that contain any keyword for this category
+        candidate_excerpts: list[tuple[int, str]] = [] # (score, sentence)
+        matched_signals_for_category: set[str] = set()
 
-        for kw in spec["keywords"]:
-            if kw.lower() in text_lower:
-                matched_signals.append(kw)
-                for sent in sentences:
-                    if kw.lower() in sent.lower() and sent not in seen_excerpts:
-                        excerpts.append(sent[:250])
-                        seen_excerpts.add(sent)
-                        break
+        for sent in sentences:
+            sentence_score = 0
+            for kw in spec["keywords"]:
+                if kw.lower() in sent.lower():
+                    sentence_score += 1
+                    matched_signals_for_category.add(kw)
+            if sentence_score > 0:
+                candidate_excerpts.append((sentence_score, sent))
 
-        if not matched_signals:
+        if not matched_signals_for_category:
             continue
 
+        # Sort sentences by score and then by length (shorter preferred for conciseness)
+        candidate_excerpts.sort(key=lambda x: (-x[0], len(x[1])))
+
+        # Select top 5 unique excerpts
+        final_excerpts: list[str] = []
+        seen_excerpt_texts: set[str] = set()
+        for _, sent_text in candidate_excerpts:
+            if sent_text not in seen_excerpt_texts:
+                final_excerpts.append(sent_text[:250]) # Truncate to 250 chars
+                seen_excerpt_texts.add(sent_text)
+            if len(final_excerpts) >= 5:
+                break
+        
         results.append(RiskCategoryDetail(
             category=RiskCategory(domain_key),
             label=spec["label"],
             tier=spec["tier"],
-            signal_count=len(matched_signals),
-            matched_signals=matched_signals,
-            excerpts=excerpts[:5],
+            signal_count=len(matched_signals_for_category),
+            matched_signals=list(matched_signals_for_category),
+            excerpts=final_excerpts,
         ))
-
+    
     results.sort(key=lambda r: (r.tier, -r.signal_count))
     return results
 
 
 def _split_sentences(text: str) -> list[str]:
+    # Improved sentence splitting to handle common abbreviations and numerical data better
+    # This regex attempts to split on periods, question marks, or exclamation points
+    # followed by whitespace and an uppercase letter, but avoids splitting on
+    # common abbreviations (e.g., Mr., Dr., U.S.) or numbers.
+    # It's a heuristic and might not be perfect for all cases.
+    # For simplicity, we'll stick to the original regex for now, but keep this in mind for future improvements.
     raw = re.split(r'(?<=[.!?])\s+(?=[A-Z"\'(])', text)
     return [s.strip() for s in raw if len(s.strip()) >= 20]
 
@@ -359,36 +378,49 @@ def _build_exec_summary(
     form_type: str,
     filing_date: str,
     categories: list[RiskCategoryDetail],
-    full_text: str,
+    full_text: str, # full_text is not used in the current implementation
 ) -> RiskCategorizationSummary:
     total_signals = sum(c.signal_count for c in categories)
     tier1_cats    = [c for c in categories if c.tier == 1]
     top_cats      = categories[:5]
 
-    parts = [
-        f"Risk categorization for {ticker} ({form_type}, filed {filing_date}).",
-        f"{len(categories)} risk domains identified across {total_signals} signal matches.",
-    ]
+    summary_parts = []
+
+    summary_parts.append(
+        f"This report categorizes risks from {ticker}'s {form_type} filing (filed {filing_date})."
+    )
+    summary_parts.append(
+        f"A total of {len(categories)} distinct risk domains were identified, "
+        f"with {total_signals} signal matches across the Risk Factors section."
+    )
 
     if tier1_cats:
         t1_names = ", ".join(c.label for c in tier1_cats)
-        parts.append(f"Critical (Tier 1) domains present: {t1_names}.")
+        summary_parts.append(
+            f"Critical (Tier 1) risk domains include: {t1_names}."
+        )
 
     if top_cats:
-        ranked = ", ".join(f"{c.label} ({c.signal_count})" for c in top_cats)
-        parts.append(f"Top domains by signal density: {ranked}.")
+        ranked_domains = [f"{c.label} ({c.signal_count} signals)" for c in top_cats]
+        summary_parts.append(
+            f"The most prominent risk areas by signal density are: {'; '.join(ranked_domains)}."
+        )
 
     if categories:
-        top = categories[0]
-        parts.append(
-            f"Dominant risk theme: {top.label} with {top.signal_count} signals "
-            f"({', '.join(top.matched_signals[:5])})."
+        dominant_category = categories[0]
+        top_signals_str = ", ".join(dominant_category.matched_signals[:5])
+        summary_parts.append(
+            f"The dominant risk theme is {dominant_category.label}, "
+            f"highlighted by {dominant_category.signal_count} signals, "
+            f"such as: {top_signals_str}."
         )
+    else:
+        summary_parts.append("No specific risk categories were identified in the filing.")
 
     return RiskCategorizationSummary(
         total_domains_identified=len(categories),
         total_signals=total_signals,
         tier1_domain_count=len(tier1_cats),
         top_domains=[c.category.value for c in top_cats],
-        executive_summary=" ".join(parts),
+        executive_summary=" ".join(summary_parts),
     )

@@ -1,7 +1,9 @@
 import re
 import json
 import httpx
+import inspect # Added import for inspect
 from api.core.database import get_supabase_client
+from api.services.usage_service import UsageService
 
 
 def extract_ticker(text: str) -> str:
@@ -68,36 +70,38 @@ async def run_best_tool(ticker: str, message: str) -> tuple:
         print(f"[bridge] register error: {e}")
         return f"Could not load tool: {e}", "error"
 
-        registered_tool_names = list(mock._tools.keys())
-        print(f"[bridge] registered tools: {registered_tool_names}")
+    # The following lines were incorrectly indented and effectively commented out.
+    # They are crucial for tool execution.
+    registered_tool_names = list(mock._tools.keys())
+    print(f"[bridge] registered tools: {registered_tool_names}")
 
-        if not mock._tools:
-            return f"No tools found for {hint}", "error"
+    if not mock._tools:
+        return f"No tools found for {hint}", "error"
 
-        # Ensure only the intended tool is registered
-        if len(registered_tool_names) != 1:
-            print(f"[bridge] WARNING: Expected 1 tool, but found {len(registered_tool_names)}: {registered_tool_names}")
-            # Attempt to find the correct tool if multiple are registered
-            expected_tool_name = ""
-            if hint == "compare_filings":
-                expected_tool_name = "compare_filings"
-            elif hint == "risk_trends":
-                expected_tool_name = "risk_trends"
-            elif hint == "categorize_risks":
-                expected_tool_name = "categorize_risks"
-            else: # executive_report
-                expected_tool_name = "generate_executive_report"
+    # Ensure only the intended tool is registered
+    if len(registered_tool_names) != 1:
+        print(f"[bridge] WARNING: Expected 1 tool, but found {len(registered_tool_names)}: {registered_tool_names}")
+        # Attempt to find the correct tool if multiple are registered
+        expected_tool_name = ""
+        if hint == "compare_filings":
+            expected_tool_name = "compare_filings"
+        elif hint == "risk_trends":
+            expected_tool_name = "risk_trends"
+        elif hint == "categorize_risks":
+            expected_tool_name = "categorize_risks"
+        else: # executive_report
+            expected_tool_name = "generate_executive_report"
 
-            if expected_tool_name in mock._tools:
-                name = expected_tool_name
-                func = mock._tools[expected_tool_name]
-                print(f"[bridge] Corrected to call {name}")
-            else:
-                return f"Could not find expected tool '{expected_tool_name}' among registered tools: {registered_tool_names}", "error"
+        if expected_tool_name in mock._tools:
+            name = expected_tool_name
+            func = mock._tools[expected_tool_name]
+            print(f"[bridge] Corrected to call {name}")
         else:
-            name, func = next(iter(mock._tools.items()))
+            return f"Could not find expected tool '{expected_tool_name}' among registered tools: {registered_tool_names}", "error"
+    else:
+        name, func = next(iter(mock._tools.items()))
 
-        print(f"[bridge] calling {name}")
+    print(f"[bridge] calling {name}")
 
     try:
         sig = inspect.signature(func)
@@ -288,6 +292,7 @@ async def process_message(user_id: str,
                           conversation_id: str,
                           content: str) -> dict:
     supabase = get_supabase_client()
+    usage_service = UsageService(supabase) # Instantiate UsageService
     print(f"[process] user:{user_id} msg:{content[:60]}")
 
     try:
@@ -354,17 +359,13 @@ async def process_message(user_id: str,
     except Exception as e:
         print(f"[process] save response error: {e}")
 
+    # Increment usage after successful message processing/tool execution
     try:
-        existing = supabase.table("user_plans").select(
-            "analyses_used"
-        ).eq("user_id", user_id).execute()
-        if existing.data:
-            current = existing.data[0]["analyses_used"]
-            supabase.table("user_plans").update({
-                "analyses_used": current + 1
-            }).eq("user_id", user_id).execute()
+        await usage_service.increment_usage(user_id)
     except Exception as e:
-        print(f"[process] usage update error: {e}")
+        print(f"[process] Failed to increment usage for user {user_id}: {e}")
+        # Do not raise HTTPException here, as the message was already processed.
+        # The usage limit check happens before this in the dependency.
 
     return {
         "content": ai_response,

@@ -23,10 +23,12 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from api.dependencies import get_current_user, get_subscription
+from api.core.dependencies import get_current_user, get_subscription
 from api.schemas.subscriptions import (
     SubscriptionOut, UpgradeLinkRequest, UpgradeLinkResponse,
 )
+from api.core.database import get_supabase_client
+from api.services.usage_service import UsageService
 
 router = APIRouter()
 
@@ -53,14 +55,23 @@ async def get_my_subscription(
     usage.remaining is None for Pro/Business (unlimited).
     usage.daily_limit is None for Pro/Business.
     """
-    from services.usage_service import get_usage_summary
+    supabase = get_supabase_client()
+    usage_service = UsageService(supabase)
 
     plan = sub.get("plan", "free")
-    usage = await get_usage_summary(
-        user_id=user["id"],
-        user_timezone=user.get("timezone", "UTC"),
-        plan=plan,
-    )
+    
+    # Get usage details from the new UsageService
+    usage_details = await usage_service.get_usage(uuid.UUID(user["user_id"]))
+
+    # Construct the usage summary for the response model
+    usage_summary = {
+        "plan": usage_details["plan"],
+        "today_count": usage_details["analyses_used"],
+        "daily_limit": usage_details["limit"] if usage_details["limit"] != -1 else None,
+        "remaining": max(0, usage_details["limit"] - usage_details["analyses_used"]) if usage_details["limit"] != -1 else None,
+        "reset_date": usage_details["period_end"], # Using period_end as reset date for simplicity
+        "reset_timezone": user.get("timezone", "UTC"), # Assuming timezone is available in user object
+    }
 
     return SubscriptionOut(
         id=sub["id"],
@@ -72,7 +83,7 @@ async def get_my_subscription(
         team_seats=sub.get("team_seats", 1),
         created_at=sub["created_at"],
         updated_at=sub["updated_at"],
-        usage=usage,
+        usage=usage_summary,
     )
 
 

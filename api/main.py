@@ -13,12 +13,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from api.routers import auth, conversations, messages, usage
+from api.routers import auth, conversations, messages, usage, notifications
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 app.include_router(messages.router, prefix="/api", tags=["messages"])
 app.include_router(usage.router, prefix="/api", tags=["usage"])
+app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 
 @app.get("/")
 async def root():

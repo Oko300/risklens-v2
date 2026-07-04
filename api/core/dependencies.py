@@ -1,7 +1,8 @@
 import os
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from api.core.database import get_supabase_client
+from api.services.usage_service import UsageService
 
 security = HTTPBearer()
 
@@ -33,39 +34,66 @@ async def get_current_user(
 
 
 async def require_usage_limit(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    supabase_client = Depends(get_supabase_client)
 ):
     try:
-        supabase = get_supabase_client()
+        usage_service = UsageService(supabase_client)
         user_id = current_user["user_id"]
 
-        result = supabase.table("user_plans").select("*").eq(
-            "user_id", user_id
-        ).execute()
+        is_within_limit = await usage_service.check_limit(user_id)
 
-        if not result.data:
-            supabase.table("user_plans").insert({
-                "user_id": user_id,
-                "plan": "free_trial",
-                "analyses_used": 0
-            }).execute()
-            return current_user
-
-        plan_data = result.data[0]
-        plan = plan_data.get("plan", "free_trial")
-        used = plan_data.get("analyses_used", 0)
-        limits = {"free_trial": 10, "pro": 500, "business": 999999}
-        limit = limits.get(plan, 10)
-
-        if used >= limit:
+        if not is_within_limit:
+            # Fetch current usage details to provide a more informative message
+            usage_details = await usage_service.get_usage(user_id)
             raise HTTPException(
                 status_code=403,
-                detail=f"Usage limit reached ({used}/{limit}). Please upgrade."
+                detail=f"Usage limit reached ({usage_details.get('analyses_used', 0)}/{usage_details.get('limit', 0)}). Please upgrade your plan."
             )
         return current_user
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[usage] Error: {e}")
-        return current_user
+        print(f"[usage] Error in require_usage_limit: {e}")
+        # In case of an error, we should deny access to prevent potential abuse
+        raise HTTPException(status_code=500, detail="Could not verify usage limits.")
+
+
+async def get_subscription(
+    current_user: dict = Depends(get_current_user),
+    supabase_client = Depends(get_supabase_client)
+):
+    try:
+        user_id = current_user["user_id"]
+        response = supabase_client.table("subscriptions").select("*").eq("user_id", user_id).single().execute()
+        
+        if response.data:
+            return response.data
+        
+        # Default to a free plan if no subscription is found
+        return {
+            "id": None,
+            "user_id": user_id,
+            "plan": "free",
+            "status": "active", # Free plan is always active
+            "current_period_start": None,
+            "current_period_end": None,
+            "team_seats": 1,
+            "created_at": None,
+            "updated_at": None,
+        }
+    except Exception as e:
+        print(f"[subscription] Error getting subscription for user {user_id}: {e}")
+        # Fallback to a default free plan in case of error
+        return {
+            "id": None,
+            "user_id": current_user["user_id"],
+            "plan": "free",
+            "status": "active",
+            "current_period_start": None,
+            "current_period_end": None,
+            "team_seats": 1,
+            "created_at": None,
+            "updated_at": None,
+        }

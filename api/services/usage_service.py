@@ -118,3 +118,40 @@ class UsageService:
             }).eq('user_id', str(user_id)).execute()
         except Exception as e:
             print(f"Error resetting plan for user {user_id}: {e}")
+
+    async def update_user_plan(self, user_id: uuid.UUID, new_plan_name: str, status: str = "active"):
+        try:
+            plan_details = self.plans.get(new_plan_name)
+            if not plan_details:
+                print(f"Warning: Attempted to set unknown plan '{new_plan_name}' for user {user_id}")
+                return
+
+            period_start = datetime.now()
+            period_end = period_start + timedelta(days=plan_details['duration_days'])
+
+            # Check if the user already has a plan entry
+            response = self.supabase.from_('user_plans').select('*').eq('user_id', str(user_id)).single().execute()
+            if response.data:
+                # Update existing plan
+                self.supabase.from_('user_plans').update({
+                    'plan': new_plan_name,
+                    'analyses_used': 0, # Reset usage on plan change
+                    'period_start': period_start.isoformat(),
+                    'period_end': period_end.isoformat(),
+                    'status': status # Add status to user_plans table
+                }).eq('user_id', str(user_id)).execute()
+            else:
+                # Create new plan entry if none exists
+                new_plan = {
+                    "user_id": str(user_id),
+                    "plan": new_plan_name,
+                    "analyses_used": 0,
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "status": status
+                }
+                self.supabase.from_('user_plans').insert(new_plan).execute()
+            print(f"User {user_id} plan updated to {new_plan_name} with status {status}")
+        except Exception as e:
+            print(f"Error updating user plan for user {user_id} to {new_plan_name}: {e}")
+            raise

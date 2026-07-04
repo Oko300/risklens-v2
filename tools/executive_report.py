@@ -21,13 +21,16 @@ from datetime import datetime
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from core.fetcher    import fetch_two_filings
-from core.fetcher     import PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
-from core.extractor  import extract_sections_cached
-from core.delta      import compute_delta
-from core.scorer     import score_sections, MaterialityLevel
-from core.cache      import cache_get, cache_set, make_cache_key
-from schemas         import ExecutiveReportOutput
+from api.models.schemas import (
+    DeltaOut, ExecutiveReportOutput, FilingMetaOut, ExtractionOut,
+    ScoringOut, SectionDeltaOut, SectionScoreOut, FinancialContextOut, SignalHitOut
+)
+from core.delta import compute_delta
+from core.extractor import extract_sections_cached, _is_raw_fallback, ExtractionMethod
+from core.fetcher import fetch_two_filings, fetch_financial_context, PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
+from core.scorer import score_sections, MaterialityLevel
+from core.cache import cache_get, cache_set, make_cache_key
+from schemas import ExecutiveReportOutput
 
 
 # TOOL_TIMEOUT must always exceed the fetcher's own internal PIPELINE_TIMEOUT
@@ -145,7 +148,10 @@ async def _run_report_pipeline(ticker: str, form_type: str) -> ExecutiveReportOu
     start = time.monotonic()
 
     # ── Fetch ────────────────────────────────────────────────────────────────
-    fetch_result = await fetch_two_filings(ticker, form_type)
+    fetch_result, financial_context = await asyncio.gather(
+        fetch_two_filings(ticker, form_type),
+        fetch_financial_context(ticker, form_type)
+    )
 
     if not fetch_result.pipeline_success:
         return ExecutiveReportOutput(
@@ -230,6 +236,7 @@ async def _run_report_pipeline(ticker: str, form_type: str) -> ExecutiveReportOu
         newer_ext=newer_ext,
         delta=delta,
         scoring=scoring,
+        financial_context=financial_context,
     )
 
     return ExecutiveReportOutput(
@@ -265,8 +272,14 @@ _MAGNITUDE_PLAIN = {
 
 
 def _build_report(
-    ticker, form_type, newer_meta, older_meta,
-    newer_ext, delta, scoring,
+    ticker: str,
+    form_type: str,
+    newer_meta: FilingMetaOut,
+    older_meta: FilingMetaOut,
+    newer_ext: ExtractionOut,
+    delta: DeltaOut,
+    scoring: ScoringOut,
+    financial_context: FinancialContextOut,
 ) -> str:
     lines = []
     now   = datetime.utcnow().strftime("%B %d, %Y")
@@ -289,8 +302,17 @@ def _build_report(
     ]
 
     # ── Overall verdict ──────────────────────────────────────────────────────
-    verdict = _verdict_paragraph(ticker, form_type, mat, rf_score, mda_score,
-                                  rf_delta, mda_delta, newer_meta, older_meta)
+    verdict = _verdict_paragraph(
+        ticker=ticker,
+        form_type=form_type,
+        newer_meta=newer_meta,
+        older_meta=older_meta,
+        rf_score=rf_score,
+        mda_score=mda_score,
+        rf_delta=rf_delta,
+        mda_delta=mda_delta,
+        mat=scoring.overall_materiality.value,
+    )
     lines += [
         f"OVERALL RISK RATING:  {emoji} {mat.upper()}",
         "",
@@ -356,7 +378,11 @@ def _build_report(
 
     # ── MD&A financial highlights ─────────────────────────────────────────────
     mda_text = newer_ext.mda.text or ""
-    highlights = _extract_mda_highlights(mda_text)
+    highlights = _extract_mda_highlights(
+        mda_text,
+        mda_score.tier1_hits + mda_score.tier2_hits,
+        financial_context,
+    )
     if highlights:
         lines += [
             "MD&A FINANCIAL HIGHLIGHTS",
@@ -424,64 +450,75 @@ def _build_report(
 def _verdict_paragraph(ticker, form_type, mat, rf_score, mda_score,
                         rf_delta, mda_delta, newer_meta, older_meta) -> str:
     period = "annual" if form_type == "10-K" else "quarterly"
-
-    # Opening
+    
+    # Opening statement based on overall materiality
     if mat == "critical":
         opening = (f"{ticker}'s most recent {period} filing ({newer_meta.filing_date}) "
-                   f"carries a CRITICAL risk rating.")
+                   f"presents a CRITICAL risk profile, demanding immediate attention.")
     elif mat == "high":
         opening = (f"{ticker}'s most recent {period} filing ({newer_meta.filing_date}) "
-                   f"carries a HIGH risk rating requiring close attention.")
+                   f"indicates a HIGH risk rating, with several key areas requiring close monitoring.")
     elif mat == "moderate":
         opening = (f"{ticker}'s most recent {period} filing ({newer_meta.filing_date}) "
-                   f"shows a MODERATE risk profile with several areas to monitor.")
-    else:
+                   f"reveals a MODERATE risk profile, suggesting a need for vigilance in specific areas.")
+    else: # low
         opening = (f"{ticker}'s most recent {period} filing ({newer_meta.filing_date}) "
-                   f"shows a LOW risk profile with no major new concerns identified.")
+                   f"shows a LOW risk profile, with no significant new concerns identified.")
 
-    # Change narrative
-    change_parts = []
+    # Narrative about changes in Risk Factors
+    rf_change_narrative = ""
     if rf_delta.delta_success:
-        mag = rf_delta.magnitude.value
-        pct = rf_delta.pct_changed * 100
-        if mag in ("major", "moderate"):
-            change_parts.append(
-                f"Risk Factors changed significantly from the prior filing "
-                f"({older_meta.filing_date}), with {pct:.0f}% of sentences affected."
-            )
+        pct_rf_changed = rf_delta.pct_changed * 100
+        if rf_delta.magnitude.value == "major":
+            rf_change_narrative = (f"The Risk Factors section underwent significant revisions, "
+                                   f"with {pct_rf_changed:.0f}% of sentences affected compared to the prior filing "
+                                   f"({older_meta.filing_date}).")
+        elif rf_delta.magnitude.value == "moderate":
+            rf_change_narrative = (f"There were moderate changes in the Risk Factors section, "
+                                   f"with {pct_rf_changed:.0f}% of sentences updated from the prior filing "
+                                   f"({older_meta.filing_date}).")
         else:
-            change_parts.append(
-                f"Risk Factors were largely stable vs the prior filing ({older_meta.filing_date})."
-            )
+            rf_change_narrative = (f"The Risk Factors section remained largely stable, "
+                                   f"with only {pct_rf_changed:.0f}% of sentences changed from the prior filing "
+                                   f"({older_meta.filing_date}).")
+    else:
+        rf_change_narrative = "Risk Factor comparison was not available (e.g., 10-Q incorporating 10-K by reference)."
 
-    # New signals
+    # Narrative about new and removed signals
+    signal_narrative_parts = []
     new_sigs = rf_score.new_signals[:3]
     if new_sigs:
         names = ", ".join(f'"{h.signal}"' for h in new_sigs)
-        change_parts.append(f"Notable new risk signals include {names}.")
-
-    # Removed signals
+        signal_narrative_parts.append(f"Notably, new risk signals emerged, including {names}.")
+    
     rem_sigs = rf_score.removed_signals[:2]
     if rem_sigs:
         names = ", ".join(f'"{h.signal}"' for h in rem_sigs)
-        change_parts.append(f"Previously flagged risks no longer present: {names}.")
+        signal_narrative_parts.append(f"Conversely, previously flagged risks such as {names} are no longer present.")
+    
+    signal_narrative = " ".join(signal_narrative_parts)
 
-    # MD&A tone
-    mda_mat = mda_score.materiality.value
-    if mda_mat in ("high", "critical"):
-        change_parts.append(
-            "The MD&A section shows elevated financial stress signals."
-        )
-    elif mda_mat == "moderate":
-        change_parts.append(
-            "The MD&A section shows some areas of financial caution."
-        )
+    # Narrative about MD&A changes and tone
+    mda_narrative = ""
+    if mda_delta.delta_success:
+        pct_mda_changed = mda_delta.pct_changed * 100
+        mda_narrative = (f"The Management's Discussion and Analysis (MD&A) section saw "
+                         f"{_MAGNITUDE_PLAIN.get(mda_delta.magnitude.value, 'some')} changes, "
+                         f"with {pct_mda_changed:.0f}% of sentences affected. ")
     else:
-        change_parts.append(
-            "The MD&A section reflects stable financial performance."
-        )
+        mda_narrative = "MD&A comparison was not available. "
 
-    return opening + " " + " ".join(change_parts)
+    mda_mat = mda_score.materiality.value
+    if mda_mat == "critical":
+        mda_narrative += "It highlights critical financial stress signals."
+    elif mda_mat == "high":
+        mda_narrative += "It reveals elevated financial stress signals."
+    elif mda_mat == "moderate":
+        mda_narrative += "It indicates areas of financial caution."
+    else:
+        mda_narrative += "It reflects stable financial performance."
+
+    return f"{opening} {rf_change_narrative} {signal_narrative} {mda_narrative}".strip()
 
 
 # ---------------------------------------------------------------------------
@@ -495,18 +532,52 @@ _MDA_KEYWORDS = [
 ]
 
 
-def _extract_mda_highlights(text: str, max_highlights: int = 5) -> list[str]:
-    if not text:
+def _extract_mda_highlights(
+    mda_text: str,
+    mda_signals: list[SignalHitOut],
+    financial_context: FinancialContextOut,
+    max_highlights: int = 5,
+) -> list[str]:
+    """
+    Extracts key highlights from the MD&A section, prioritizing financial metrics
+    from FinancialContextOut if available, otherwise using keyword matching.
+    """
+    if not mda_text:
         return []
+
+    highlights = []
+
+    # 1. Prioritize structured financial context if available
+    if financial_context and financial_context.fetch_success:
+        financial_metrics = {
+            "Revenue": financial_context.revenue,
+            "Net Income": financial_context.net_income,
+            "Cash and Equivalents": financial_context.cash_and_equivalents,
+            "Total Debt": financial_context.total_debt,
+            "Current Ratio": financial_context.current_ratio,
+            "Capex": financial_context.capex,
+        }
+        
+        for metric, value in financial_metrics.items():
+            if value is not None:
+                highlights.append(f"{metric}: {value:,.0f}")
+        
+        if highlights:
+            return highlights
+
+    # 2. Fallback to keyword-based extraction if financial context is not available or failed
     import re
-    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', mda_text)
     scored = []
     for sent in sentences:
         sent = sent.strip()
         if len(sent) < 40 or len(sent) > 300:
             continue
         score = sum(1 for kw in _MDA_KEYWORDS if kw.lower() in sent.lower())
-        if score >= 2:
+        for signal_hit in mda_signals:
+            if signal_hit.signal.lower() in sent.lower():
+                score += 2 # Signals are more important
+        if score > 0:
             scored.append((score, sent))
     scored.sort(key=lambda x: -x[0])
     seen = set()
@@ -569,5 +640,4 @@ def _is_reference_pointer(text: Optional[str]) -> bool:
 
 def _is_raw_fallback(section) -> bool:
     """True if extraction fell back to the full document (unreliable for analysis)."""
-    from core.extractor import ExtractionMethod
     return section.method == ExtractionMethod.RAW_FALLBACK

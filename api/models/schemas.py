@@ -62,3 +62,13 @@ class UsageInfo(BaseModel):
     analyses_used: int
     limit: int
     days_remaining: int
+
+class Notification(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    message: str
+    read_status: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

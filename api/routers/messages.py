@@ -8,25 +8,32 @@ router = APIRouter()
 @router.post("/messages/test")
 async def test_message(request: Request):
     try:
-        body = await request.json()
-        content = body.get("content", "Generate executive report for AAPL")
+        # For testing, we'll use a dummy user_id and conversation_id.
+        # In a real scenario, these would come from authentication/frontend.
+        test_user_id = "de1c214f-382c-4626-811b-db79493cae84" # Replace with a valid UUID from your auth.users table
+test_conversation_id = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12"  # We'll fix this next
         
-        from tools.executive_report import generate_executive_report
-        print(f"[test] Running tool for AAPL...")
-        result = generate_executive_report(ticker="AAPL", form_type="10-K")
-        print(f"[test] Tool result type: {type(result)}")
-        print(f"[test] Tool result preview: {str(result)[:200]}")
+        body = await request.json()
+        content = body.get("content", "Analyze AAPL") # Default test message
+
+        print(f"[test] Calling process_message for user: {test_user_id}, conversation: {test_conversation_id}, content: {content}")
+        result = await process_message(
+            user_id=test_user_id,
+            conversation_id=test_conversation_id,
+            content=content
+        )
+        print(f"[test] Process message result: {result}")
         
         return {
-            "tool_ran": True,
-            "result_type": str(type(result)),
-            "preview": str(result)[:500]
+            "status": "success",
+            "message_processed": True,
+            "result": result
         }
     except Exception as e:
         import traceback
         print(f"[test] ERROR: {e}")
         print(traceback.format_exc())
-        return {"error": str(e), "tool_ran": False}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/messages")
 async def send_message(

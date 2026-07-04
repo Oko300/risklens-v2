@@ -30,8 +30,12 @@ import hashlib
 import hmac
 import os
 from typing import Any
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
+
+from api.core.database import get_supabase_client
+from api.services.usage_service import UsageService
 
 router = APIRouter()
 
@@ -71,6 +75,9 @@ async def paystack_webhook(request: Request):
     data: dict       = event.get("data", {})
 
     print(f"[webhook:paystack] received event={event_type}")
+
+    supabase = get_supabase_client()
+    usage_service = UsageService(supabase)
 
     # ── Route to handler ──────────────────────────────────────────────────
     handlers = {
@@ -119,6 +126,8 @@ async def _handle_charge_success(data: dict) -> None:
         status="active",
         paystack_customer_id=customer_id or customer_code,
     )
+    # Also update the user_plans table
+    await usage_service.update_user_plan(uuid.UUID(user_id), plan, "active")
     print(f"[webhook:paystack] charge.success → user={user_id} plan={plan} activated")
 
 
@@ -154,6 +163,8 @@ async def _handle_subscription_create(data: dict) -> None:
         update["current_period_end"] = next_date
 
     await _update_subscription_by_user(user_id, update)
+    # Also update the user_plans table
+    await usage_service.update_user_plan(uuid.UUID(user_id), plan, "active")
     print(f"[webhook:paystack] subscription.create → user={user_id} plan={plan}")
 
 
@@ -174,6 +185,13 @@ async def _handle_subscription_disable(data: dict) -> None:
         ).eq("paystack_subscription_code", subscription_code).execute()
 
     await asyncio.to_thread(_op)
+    # Also update the user_plans table to reflect cancellation
+    # For now, we'll revert to free_trial, but a more robust system might have a 'cancelled' status
+    # or keep the paid plan active until current_period_end.
+    # Given the current usage_service, reverting to free_trial is the most straightforward.
+    user_id_from_sub = await _find_user_by_paystack_subscription_code(subscription_code)
+    if user_id_from_sub:
+        await usage_service.update_user_plan(uuid.UUID(user_id_from_sub), "free_trial", "cancelled")
     print(f"[webhook:paystack] subscription.disable → code={subscription_code} → cancelled")
 
 
@@ -194,6 +212,10 @@ async def _handle_invoice_payment_failed(data: dict) -> None:
         ).eq("paystack_subscription_code", subscription_code).execute()
 
     await asyncio.to_thread(_op)
+    # Also update the user_plans table to reflect past_due status
+    user_id_from_sub = await _find_user_by_paystack_subscription_code(subscription_code)
+    if user_id_from_sub:
+        await usage_service.update_user_plan(uuid.UUID(user_id_from_sub), "free_trial", "past_due") # Assuming free_trial for now
     print(f"[webhook:paystack] invoice.payment_failed → code={subscription_code} → past_due")
 
 
@@ -237,6 +259,26 @@ async def _find_user_by_paystack_customer(customer_code: str) -> str | None:
             .table("subscriptions")
             .select("user_id")
             .eq("paystack_customer_id", customer_code)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0]["user_id"] if rows else None
+
+    return await asyncio.to_thread(_op)
+
+
+async def _find_user_by_paystack_subscription_code(subscription_code: str) -> str | None:
+    """
+    Find a user_id by their Paystack subscription code.
+    """
+    def _op():
+        from db.client import get_admin_client
+        result = (
+            get_admin_client()
+            .table("subscriptions")
+            .select("user_id")
+            .eq("paystack_subscription_code", subscription_code)
             .limit(1)
             .execute()
         )

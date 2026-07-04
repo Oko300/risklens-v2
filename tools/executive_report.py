@@ -30,7 +30,6 @@ from core.extractor import extract_sections_cached, _is_raw_fallback, Extraction
 from core.fetcher import fetch_two_filings, fetch_financial_context, PIPELINE_TIMEOUT as _FETCHER_PIPELINE_TIMEOUT
 from core.scorer import score_sections, MaterialityLevel
 from core.cache import cache_get, cache_set, make_cache_key
-from schemas import ExecutiveReportOutput
 
 
 # TOOL_TIMEOUT must always exceed the fetcher's own internal PIPELINE_TIMEOUT

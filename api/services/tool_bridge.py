@@ -1,122 +1,108 @@
-from fastmcp import FastMCP
+import re
+import json
+import inspect
 
-class ToolRegistry:
+# Maps tool hints to their register functions and exact tool names
+TOOL_MAP = {
+    "compare_filings": {
+        "module": "tools.compare_filings",
+        "register": "register_compare_filings",
+        "tool_name": "compare_filings"
+    },
+    "risk_trends": {
+        "module": "tools.risk_trends",
+        "register": "register_risk_trends",
+        "tool_name": "analyze_risk_trends"
+    },
+    "categorize_risks": {
+        "module": "tools.risk_categorizer",
+        "register": "register_risk_categorizer",
+        "tool_name": "categorize_risks"
+    },
+    "executive_report": {
+        "module": "tools.executive_report",
+        "register": "register_executive_report",
+        "tool_name": "generate_executive_report"
+    }
+}
+
+
+class MockMCP:
+    """Minimal MCP stand-in that captures the registered tool function."""
     def __init__(self):
         self._tools = {}
-    
+
     def tool(self):
-        registry = self
-        class Decorator:
+        parent = self
+        class Dec:
             def __call__(self, f):
-                registry._tools[f.__name__] = f
+                parent._tools[f.__name__] = f
                 return f
-        return Decorator()
+        return Dec()
 
-_registry = None
 
-def get_registry():
-    global _registry
-    if _registry is not None:
-        return _registry
-    
-    _registry = ToolRegistry()
-    
-    try:
-        from tools.executive_report import register_executive_report
-        register_executive_report(_registry)
-        print(f"[bridge] Registered executive_report tools: "
-              f"{list(_registry._tools.keys())}")
-    except Exception as e:
-        print(f"[bridge] executive_report error: {e}")
-    
-    try:
-        from tools.compare_filings import register_compare_filings
-        register_compare_filings(_registry)
-        print(f"[bridge] Registered compare_filings tools")
-    except Exception as e:
-        print(f"[bridge] compare_filings error: {e}")
-    
-    try:
-        from tools.risk_trends import register_risk_trends
-        register_risk_trends(_registry)
-        print(f"[bridge] Registered risk_trends tools")
-    except Exception as e:
-        print(f"[bridge] risk_trends error: {e}")
-    
-    try:
-        from tools.risk_categorizer import register_risk_categorizer
-        register_risk_categorizer(_registry)
-        print(f"[bridge] Registered risk_categorizer tools")
-    except Exception as e:
-        print(f"[bridge] risk_categorizer error: {e}")
-    
-    print(f"[bridge] All registered tools: {list(_registry._tools.keys())}")
-    return _registry
+def get_tool_hint(message: str) -> str:
+    """Determine which single tool to call based on message content."""
+    msg = message.lower()
+    if any(w in msg for w in ["compare", "vs", "versus", "difference", "last two", "both filings"]):
+        return "compare_filings"
+    if any(w in msg for w in ["trend", "history", "years", "over time", "past", "trajectory", "historically"]):
+        return "risk_trends"
+    if any(w in msg for w in ["categor", "breakdown", "types", "domain", "classify", "categories"]):
+        return "categorize_risks"
+    return "executive_report"
 
-async def run_tool(tool_hint: str, ticker: str, 
-                   form_type: str = "10-K") -> str:
-    registry = get_registry()
-    tools = registry._tools
-    
-    print(f"[bridge] Available tools: {list(tools.keys())}")
-    print(f"[bridge] Looking for tool matching: {tool_hint}")
-    
-    # Find the right tool based on hint
-    target_func = None
-    
-    if tool_hint == "compare_filings":
-        for name, func in tools.items():
-            if "compare" in name.lower():
-                target_func = (name, func)
-                break
-    elif tool_hint == "risk_trends":
-        for name, func in tools.items():
-            if "trend" in name.lower() or "risk_trend" in name.lower():
-                target_func = (name, func)
-                break
-    elif tool_hint == "categorize_risks":
-        for name, func in tools.items():
-            if "categor" in name.lower():
-                target_func = (name, func)
-                break
-    else:
-        # Default: executive report
-        for name, func in tools.items():
-            if "executive" in name.lower() or "report" in name.lower() or "generate" in name.lower():
-                target_func = (name, func)
-                break
-    
-    # Fallback: use first available tool
-    if not target_func and tools:
-        name, func = next(iter(tools.items()))
-        target_func = (name, func)
-    
-    if not target_func:
-        return f"No tools available to analyze {ticker}"
-    
-    name, func = target_func
-    print(f"[bridge] Calling tool: {name} for {ticker}")
-    
+
+async def run_best_tool(ticker: str, message: str) -> tuple:
+    """Load and call exactly ONE tool based on message intent. Returns (result_str, tool_name)."""
+    hint = get_tool_hint(message)
+    config = TOOL_MAP[hint]
+    print(f"[bridge] intent={hint} ticker={ticker} tool={config['tool_name']}")
+
+    mock = MockMCP()
+
     try:
-        import inspect
+        import importlib
+        module = importlib.import_module(config["module"])
+        register_fn = getattr(module, config["register"])
+        register_fn(mock)
+    except Exception as e:
+        import traceback
+        print(f"[bridge] register error for {hint}: {e}")
+        print(traceback.format_exc())
+        return f"Could not load {hint} tool: {e}", "error"
+
+    tool_name = config["tool_name"]
+    func = mock._tools.get(tool_name)
+
+    # Fallback: use first registered tool if exact name not found
+    if func is None and mock._tools:
+        tool_name, func = next(iter(mock._tools.items()))
+        print(f"[bridge] exact tool not found, falling back to: {tool_name}")
+
+    if func is None:
+        return f"No tool available for {hint}. Please try again.", "error"
+
+    print(f"[bridge] calling {tool_name} for {ticker}")
+
+    try:
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
-        print(f"[bridge] Tool {name} params: {params}")
-        
-        if 'ticker' in params and 'form_type' in params:
-            result = await func(ticker=ticker, form_type=form_type)
-        elif 'ticker' in params:
+        print(f"[bridge] params: {params}")
+
+        if "ticker" in params and "form_type" in params:
+            result = await func(ticker=ticker, form_type="10-K")
+        elif "ticker" in params:
             result = await func(ticker=ticker)
         else:
             result = await func(ticker)
-        
+
         if isinstance(result, dict):
-            import json
-            return json.dumps(result, indent=2)
-        return str(result)
-        
+            return json.dumps(result, indent=2), tool_name
+        return str(result), tool_name
+
     except Exception as e:
         import traceback
-        print(f"[bridge] Tool {name} error: {e}")
+        print(f"[bridge] call error for {tool_name}: {e}")
         print(traceback.format_exc())
-        return f"Analysis error for {ticker}: {str(e)}"
+        return f"Analysis failed for {ticker}: {str(e)}", "error"

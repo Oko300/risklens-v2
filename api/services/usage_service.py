@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from supabase import Client
 import uuid
 
@@ -7,7 +7,7 @@ class UsageService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
         self.plans = {
-            "free_trial": {"limit": 10, "duration_days": 1},   # resets daily
+            "free_trial": {"limit": 10, "duration_days": 1},
             "pro":        {"limit": 500, "duration_days": 30},
             "business":   {"limit": -1,  "duration_days": 30},
         }
@@ -15,10 +15,21 @@ class UsageService:
     def get_plan_limit(self, plan_name: str) -> int:
         return self.plans.get(plan_name, {"limit": 0})["limit"]
 
+    def _now(self) -> datetime:
+        """Always return timezone-aware UTC datetime."""
+        return datetime.now(timezone.utc)
+
     def _next_midnight(self) -> datetime:
-        """Return tomorrow at 00:00:00 local server time."""
-        tomorrow = datetime.now() + timedelta(days=1)
+        """Return tomorrow at 00:00:00 UTC, timezone-aware."""
+        tomorrow = self._now() + timedelta(days=1)
         return tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def _parse_dt(self, dt_str: str) -> datetime:
+        """Parse ISO datetime string, always returning timezone-aware UTC datetime."""
+        dt = datetime.fromisoformat(dt_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
 
     async def get_usage(self, user_id: uuid.UUID) -> dict:
         try:
@@ -34,9 +45,8 @@ class UsageService:
             if not user_plan:
                 return await self._create_default_plan(user_id)
 
-            # Auto-reset if period has expired
-            period_end_dt = datetime.fromisoformat(user_plan["period_end"])
-            if datetime.now() > period_end_dt:
+            period_end_dt = self._parse_dt(user_plan["period_end"])
+            if self._now() > period_end_dt:
                 await self._reset_plan(user_id, user_plan["plan"])
                 response = (
                     self.supabase.from_("user_plans")
@@ -48,8 +58,8 @@ class UsageService:
                 user_plan = response.data
 
             plan_limit = self.get_plan_limit(user_plan["plan"])
-            period_end_dt = datetime.fromisoformat(user_plan["period_end"])
-            days_remaining = (period_end_dt - datetime.now()).days
+            period_end_dt = self._parse_dt(user_plan["period_end"])
+            days_remaining = (period_end_dt - self._now()).days
 
             return {
                 "plan": user_plan["plan"],
@@ -67,10 +77,6 @@ class UsageService:
             }
 
     async def increment_usage(self, user_id: uuid.UUID) -> bool:
-        """
-        Only call this when a tool ran successfully and returned real filing data.
-        Returns True if incremented, False if limit already reached.
-        """
         try:
             response = (
                 self.supabase.from_("user_plans")
@@ -84,9 +90,8 @@ class UsageService:
             if not user_plan:
                 user_plan = await self._create_default_plan(user_id)
 
-            # Auto-reset expired period before incrementing
-            period_end_dt = datetime.fromisoformat(user_plan["period_end"])
-            if datetime.now() > period_end_dt:
+            period_end_dt = self._parse_dt(user_plan["period_end"])
+            if self._now() > period_end_dt:
                 await self._reset_plan(user_id, user_plan["plan"])
                 response = (
                     self.supabase.from_("user_plans")
@@ -99,12 +104,11 @@ class UsageService:
 
             plan_limit = self.get_plan_limit(user_plan["plan"])
 
-            # Unlimited plan
             if plan_limit == -1:
                 return True
 
             if user_plan["analyses_used"] >= plan_limit:
-                print(f"[usage] user {user_id} already at limit ({user_plan['analyses_used']}/{plan_limit})")
+                print(f"[usage] user {user_id} at limit ({user_plan['analyses_used']}/{plan_limit})")
                 return False
 
             new_count = user_plan["analyses_used"] + 1
@@ -133,9 +137,8 @@ class UsageService:
             if not user_plan:
                 user_plan = await self._create_default_plan(user_id)
 
-            # Auto-reset expired period before checking
-            period_end_dt = datetime.fromisoformat(user_plan["period_end"])
-            if datetime.now() > period_end_dt:
+            period_end_dt = self._parse_dt(user_plan["period_end"])
+            if self._now() > period_end_dt:
                 await self._reset_plan(user_id, user_plan["plan"])
                 response = (
                     self.supabase.from_("user_plans")
@@ -155,12 +158,13 @@ class UsageService:
 
         except Exception as e:
             print(f"[usage] check_limit error for {user_id}: {e}")
-            return False
+            # On error allow access rather than locking out the user
+            return True
 
     async def _create_default_plan(self, user_id: uuid.UUID) -> dict:
         try:
-            period_start = datetime.now()
-            period_end = self._next_midnight()  # free trial resets at midnight
+            period_start = self._now()
+            period_end = self._next_midnight()
             new_plan = {
                 "user_id": str(user_id),
                 "plan": "free_trial",
@@ -178,7 +182,7 @@ class UsageService:
 
     async def _reset_plan(self, user_id: uuid.UUID, plan_name: str):
         try:
-            period_start = datetime.now()
+            period_start = self._now()
             if plan_name == "free_trial":
                 period_end = self._next_midnight()
             else:
@@ -190,7 +194,7 @@ class UsageService:
                 "period_start": period_start.isoformat(),
                 "period_end": period_end.isoformat(),
             }).eq("user_id", str(user_id)).execute()
-            print(f"[usage] reset plan for user {user_id} ({plan_name}) until {period_end}")
+            print(f"[usage] reset {plan_name} for user {user_id} until {period_end}")
         except Exception as e:
             print(f"[usage] _reset_plan error for {user_id}: {e}")
 
@@ -201,7 +205,7 @@ class UsageService:
                 print(f"[usage] unknown plan '{new_plan_name}' for user {user_id}")
                 return
 
-            period_start = datetime.now()
+            period_start = self._now()
             if new_plan_name == "free_trial":
                 period_end = self._next_midnight()
             else:
@@ -229,7 +233,7 @@ class UsageService:
                     "period_start": period_start.isoformat(),
                     "period_end": period_end.isoformat(),
                 }).execute()
-            print(f"[usage] user {user_id} plan updated to {new_plan_name}")
+            print(f"[usage] user {user_id} updated to {new_plan_name}")
         except Exception as e:
             print(f"[usage] update_user_plan error for {user_id}: {e}")
             raise
